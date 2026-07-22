@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "id": "furry-ai-state",
+  "name": "Furry AI State",
+  "version": "0.1.0",
+  "description": "The first built-in furry-agent-pet package, using four user-provided furry-ai-state GIF animations.",
+  "author": "To be confirmed before public redistribution",
+  "license": "Permission status to be confirmed before public redistribution",
+  "canvas": {
+    "width": 610,
+    "height": 600,
+    "fit": "contain",
+    "anchor": {
+      "x": 0.5,
+      "y": 1
+    }
+  },
+  "animations": {
+    "idle": {
+      "source": "animations/idle.gif",
+      "mediaType": "image/gif",
+      "loop": true,
+      "alt": "蓝色兽耳桌宠安静地待机"
+    },
+    "coding": {
+      "source": "animations/coding.gif",
+      "mediaType": "image/gif",
+      "loop": true,
+      "alt": "蓝色兽耳桌宠使用笔记本电脑工作"
+    },
+    "sleeping": {
+      "source": "animations/sleeping.gif",
+      "mediaType": "image/gif",
+      "loop": true,
+      "alt": "蓝色兽耳桌宠进入睡眠"
+    },
+    "exhausted": {
+      "source": "animations/exhausted.gif",
+      "mediaType": "image/gif",
+      "loop": true,
+      "alt": "蓝色兽耳桌宠疲惫地喘气"
+    }
+  },
+  "states": {
+    "idle": "idle",
+    "thinking": "idle",
+    "planning": "idle",
+    "coding": "coding",
+    "testing": "coding",
+    "success": "idle",
+    "error": "exhausted"
+  },
+  "stateVariants": {
+    "idle": [
+      {
+        "animation": "sleeping",
+        "activateAfterMs": 60000
+      }
+    ]
+  },
+  "interactions": {},
+  "reducedMotionAnimations": {},
+  "fallbackAnimation": "idle"
+}

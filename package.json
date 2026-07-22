@@ -1,0 +1,39 @@
+{
+  "name": "furry-agent-pet",
+  "description": "A lightweight cross-platform desktop pet that visualizes MCP agent state.",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "check": "npm run check:frontend && npm test && npm run test:rust && npm run check:rust && npm run format:rust -- --check && npm run build",
+    "check:frontend": "tsc --noEmit",
+    "check:rust": "node scripts/native-command.mjs cargo check --manifest-path src-tauri/Cargo.toml",
+    "format:rust": "node scripts/native-command.mjs cargo fmt --manifest-path src-tauri/Cargo.toml",
+    "test": "vitest run",
+    "test:rust": "node scripts/native-command.mjs cargo test --manifest-path src-tauri/Cargo.toml",
+    "test:watch": "vitest",
+    "mock:ipc": "node scripts/mock-agent-ipc.mjs --demo",
+    "mock:ipc:protocol": "node scripts/mock-agent-ipc.mjs --protocol-test",
+    "smoke:mcp:published": "node scripts/smoke-published-mcp.mjs",
+    "smoke:windows:native": "node scripts/smoke-windows-native.mjs",
+    "smoke:windows:installer": "node scripts/smoke-windows-installer.mjs",
+    "preview": "vite preview",
+    "tauri": "node scripts/native-command.mjs tauri",
+    "tauri:dev": "node scripts/native-command.mjs tauri dev",
+    "tauri:build": "node scripts/native-command.mjs tauri build",
+    "tauri:build:windows": "node scripts/native-command.mjs tauri build --bundles nsis"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2",
+    "@types/node": "^26.1.1",
+    "jsdom": "^29.1.1",
+    "typescript": "~5.6.2",
+    "vite": "^6.0.3",
+    "vitest": "^4.1.10"
+  }
+}

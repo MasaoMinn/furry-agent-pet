@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 320" role="img" aria-labelledby="title description">
+  <title id="title">桌宠备用静态图标</title>
+  <desc id="description">一个蓝绿色、带兽耳的简洁桌宠头像</desc>
+  <defs>
+    <linearGradient id="fur" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#9ee8e4"/>
+      <stop offset="1" stop-color="#4aaebf"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="10" stdDeviation="9" flood-color="#153b52" flood-opacity=".18"/>
+    </filter>
+  </defs>
+  <g filter="url(#shadow)">
+    <path d="M72 109 85 42l58 48c11-3 23-5 37-5s26 2 37 5l58-48 13 67c17 22 27 49 27 79 0 70-55 112-135 112S45 258 45 188c0-30 10-57 27-79Z" fill="url(#fur)"/>
+    <path d="m92 68 12 48 28-18Z" fill="#d8faf6" opacity=".8"/>
+    <path d="m268 68-12 48-28-18Z" fill="#d8faf6" opacity=".8"/>
+    <ellipse cx="125" cy="179" rx="12" ry="16" fill="#24465b"/>
+    <ellipse cx="235" cy="179" rx="12" ry="16" fill="#24465b"/>
+    <path d="M166 207q14 13 28 0" fill="none" stroke="#24465b" stroke-linecap="round" stroke-width="8"/>
+    <path d="m180 197-11-8h22Z" fill="#24465b"/>
+    <circle cx="104" cy="210" r="12" fill="#f7a8ad" opacity=".55"/>
+    <circle cx="256" cy="210" r="12" fill="#f7a8ad" opacity=".55"/>
+  </g>
+</svg>

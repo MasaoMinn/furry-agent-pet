@@ -155,4 +155,3 @@ MCP Agent
 ```
 
 Agent 成功完成任务时，通过 `success.message` 返回一段结束语，桌宠会在庆祝效果旁完整展示该文本。重复同状态事件可以更新 `message`/`file`，但不会重置 success 返回 idle 或 idle 延迟动作的计时；`error` 会保持到新的合法事件或用户确认，确认不会向 Runtime 反向发送状态。
-

@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="用桌宠动作和文字气泡呈现 MCP Agent 的实时状态"
+    />
+    <link rel="stylesheet" href="/src/styles.css" />
+    <title>furry-agent-pet</title>
+    <script type="module" src="/src/main.ts" defer></script>
+  </head>
+
+  <body>
+    <main id="app" class="pet-stage" data-state="idle" data-connection="connecting">
+      <div class="pet-column">
+      <section
+        id="state-bubble"
+        class="state-bubble"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        hidden
+      >
+        <div class="bubble-heading">
+          <span id="bubble-eyebrow">Agent 状态</span>
+          <button id="bubble-close" class="bubble-close" type="button" aria-label="关闭消息">
+            ×
+          </button>
+        </div>
+        <p id="bubble-message" class="bubble-message" tabindex="0"></p>
+        <p id="bubble-file" class="bubble-file" hidden></p>
+      </section>
+
+      <section class="pet-zone" aria-label="Agent 桌宠">
+        <span class="celebration" aria-hidden="true"></span>
+        <button
+          id="pet-drag-handle"
+          class="pet-drag-handle"
+          type="button"
+          aria-label="拖动桌宠"
+        >
+          <img
+            id="pet-image"
+            class="pet-image"
+            src="/pets/fallback-idle.svg"
+            alt="桌宠备用静态图标"
+            draggable="false"
+          />
+        </button>
+        <span id="connection-badge" class="connection-badge">等待 MCP</span>
+      </section>
+
+      <p class="state-chip" role="status">
+        <span class="connection-dot" aria-hidden="true"></span>
+        <span id="state-label">idle · 空闲</span>
+        <span class="state-separator" aria-hidden="true">·</span>
+        <span id="connection-label">正在连接</span>
+        <button
+          id="settings-toggle"
+          class="round-button settings-toggle"
+          type="button"
+          aria-label="打开设置"
+          aria-expanded="false"
+        >
+          <span aria-hidden="true">⚙</span>
+        </button>
+      </p>
+      </div>
+
+      <section id="settings-panel" class="settings-panel" aria-label="桌宠设置" hidden>
+        <header
+          id="settings-drag-handle"
+          class="settings-header settings-drag-handle side-panel-header"
+          title="拖动设置窗口"
+        >
+          <div>
+            <p class="settings-kicker">furry-agent-pet</p>
+            <h1>设置</h1>
+          </div>
+          <button id="settings-close" class="round-button side-panel-close" type="button" aria-label="关闭设置">×</button>
+        </header>
+
+        <form id="settings-form" class="settings-form">
+          <label class="range-setting">
+            <span>桌宠缩放 <output id="scale-output">100%</output></span>
+            <input id="scale-input" type="range" min="50" max="200" step="5" />
+          </label>
+
+          <label class="range-setting">
+            <span>透明度 <output id="opacity-output">100%</output></span>
+            <input id="opacity-input" type="range" min="30" max="100" step="5" />
+          </label>
+
+          <label class="range-setting">
+            <span>完成气泡 <output id="duration-output">15 秒</output></span>
+            <input id="duration-input" type="range" min="3" max="60" step="1" />
+          </label>
+
+          <label class="text-setting">
+            <span>宠物资源包</span>
+            <select id="pet-package-input" aria-describedby="pet-package-description"></select>
+          </label>
+          <p id="pet-package-description" class="setting-description">
+            内置包登记 manifest 即可；本地包会先验证并复制到应用数据目录。
+          </p>
+          <div class="pet-package-actions">
+            <button id="import-pet-package-button" type="button">导入 pet.json</button>
+            <button id="remove-pet-package-button" type="button">删除当前本地包</button>
+          </div>
+          <p id="pet-package-status" class="setting-description" role="status" hidden></p>
+          <p id="pet-package-error" class="connection-error-label" role="status" hidden></p>
+
+          <details class="state-animation-settings">
+            <summary>逐状态选择动作</summary>
+            <p>留空时跟随资源包默认映射；选择后会固定使用指定动作。</p>
+            <div id="state-animation-grid" class="state-animation-grid"></div>
+          </details>
+
+          <div class="toggle-grid">
+            <label><input id="always-on-top-input" type="checkbox" /> 总在最前</label>
+            <label><input id="bubble-input" type="checkbox" /> 显示气泡</label>
+            <label><input id="file-input" type="checkbox" /> 显示文件</label>
+          </div>
+          <p id="connection-error-label" class="connection-error-label" role="status" hidden></p>
+
+          <div class="settings-actions">
+            <button id="reconnect-button" type="button">重新连接</button>
+            <button id="reset-button" type="button">恢复默认</button>
+            <button id="onboarding-button" type="button">接入向导</button>
+            <button id="quit-button" class="danger-button" type="button">退出应用</button>
+          </div>
+          <p id="settings-action-error" class="connection-error-label" role="status" hidden></p>
+        </form>
+      </section>
+
+      <section
+        id="onboarding-panel"
+        class="onboarding-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="onboarding-title"
+        hidden
+      >
+        <header class="settings-header side-panel-header">
+          <div>
+            <p class="settings-kicker">furry-agent-pet</p>
+            <h1 id="onboarding-title">连接你的 Agent</h1>
+          </div>
+          <button
+            id="onboarding-close"
+            class="round-button side-panel-close"
+            type="button"
+            aria-label="稍后设置"
+          >
+            ×
+          </button>
+        </header>
+
+        <div class="onboarding-content">
+          <p class="onboarding-intro">
+            复制下面的提示词并发送给你的 Agent。Agent 会检查并接入
+            <code>furry-companion-mcp</code>，随后桌宠会自动显示连接状态。
+          </p>
+
+          <article class="setup-card agent-prompt-card">
+            <h2>发送给 Agent 的提示词</h2>
+            <pre id="agent-connection-prompt" tabindex="0"></pre>
+            <button id="copy-agent-prompt" class="copy-prompt-button" type="button">复制提示词</button>
+            <p id="copy-agent-prompt-status" class="copy-status" role="status">
+              复制后粘贴给 Agent，并按 Agent 的提示完成连接。
+            </p>
+          </article>
+
+          <div id="onboarding-status" class="onboarding-status" data-connection="connecting">
+            <strong id="onboarding-connection-label">正在检测连接</strong>
+          </div>
+
+          <div class="onboarding-actions">
+            <button id="onboarding-reconnect" type="button">重新检测</button>
+            <button id="onboarding-done" class="primary-button" type="button">完成并关闭</button>
+          </div>
+        </div>
+      </section>
+
+      <p id="fatal-error" class="fatal-error" role="alert" hidden></p>
+    </main>
+  </body>
+</html>

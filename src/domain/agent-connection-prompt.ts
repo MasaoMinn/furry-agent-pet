@@ -1,0 +1,1 @@
+export const AGENT_CONNECTION_PROMPT = `请帮我连接 furry-agent-pet。先检查当前 Agent 是否已经有 furry_companion MCP 工具；如果没有，请指导我把 npx -y furry-companion-mcp 注册为当前客户端的 stdio MCP server，并提示我在需要时重启或重载客户端。连接后，请在真实工作过程中调用 furry_companion.set_state 上报状态：调查与思考时用 thinking，制定实现方案时用 planning，修改文件前用 coding，编译、测试与验证时用 testing，完成后用 success 并附上一段自然的中文完成说明，发生无法恢复的失败时才用 error。不要模拟轮换，也不要发送私密路径、密钥或推理过程。`;

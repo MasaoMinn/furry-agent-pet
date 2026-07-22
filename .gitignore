@@ -1,0 +1,34 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+.cache/
+.tooling/
+
+# Generated release binaries belong in GitHub Releases, not Git history.
+artifacts/windows/*.exe
+artifacts/windows/legacy-old-name/
+
+# Tauri's icon generator also emits mobile assets; this desktop app does not use them.
+src-tauri/icons/android/
+src-tauri/icons/ios/
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

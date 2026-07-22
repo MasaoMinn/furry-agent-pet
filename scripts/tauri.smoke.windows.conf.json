@@ -1,0 +1,13 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "furry-agent-pet Smoke",
+  "mainBinaryName": "furry-agent-pet-smoke",
+  "identifier": "io.github.masaominn.furry-agent-pet-smoke",
+  "bundle": {
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    }
+  }
+}

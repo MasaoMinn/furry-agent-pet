@@ -1,0 +1,143 @@
+import { invoke, isTauri } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
+
+import type { AgentStateEvent } from "../domain/agent-state";
+
+export type ConnectionStatus = "connecting" | "connected" | "disconnected" | "disabled";
+
+export interface RuntimeSnapshot {
+  revision: number;
+  status: ConnectionStatus;
+  endpoint: string;
+  lastEventAtMs: number | null;
+  lastError: string | null;
+}
+
+export interface RuntimeHandlers {
+  onState: (event: AgentStateEvent) => void;
+  onConnection: (snapshot: RuntimeSnapshot) => void;
+  onOpenSettings?: () => void;
+  onAlwaysOnTopChanged?: (alwaysOnTop: boolean) => void;
+}
+
+export async function subscribeToRuntime(handlers: RuntimeHandlers): Promise<() => void> {
+  if (!isTauri()) {
+    return subscribeToBrowserDemo(handlers);
+  }
+
+  const unlisteners: UnlistenFn[] = [];
+  unlisteners.push(
+    await listen<AgentStateEvent>("agent-state", ({ payload }) => handlers.onState(payload)),
+  );
+  unlisteners.push(
+    await listen<RuntimeSnapshot>("connection-status", ({ payload }) =>
+      handlers.onConnection(payload),
+    ),
+  );
+  unlisteners.push(
+    await listen("open-settings", () => handlers.onOpenSettings?.()),
+  );
+  unlisteners.push(
+    await listen<boolean>("always-on-top-changed", ({ payload }) =>
+      handlers.onAlwaysOnTopChanged?.(payload),
+    ),
+  );
+
+  handlers.onConnection(await invoke<RuntimeSnapshot>("get_runtime_snapshot"));
+
+  return () => {
+    for (const unlisten of unlisteners) {
+      unlisten();
+    }
+  };
+}
+
+export async function configureIpc(address: string, enabled: boolean): Promise<void> {
+  if (isTauri()) {
+    await invoke("set_ipc_config", { address, enabled });
+  }
+}
+
+export async function reconnectIpc(): Promise<void> {
+  if (isTauri()) {
+    await invoke("reconnect_ipc");
+  }
+}
+
+export async function setAlwaysOnTop(alwaysOnTop: boolean): Promise<void> {
+  if (isTauri()) {
+    await invoke("set_always_on_top", { alwaysOnTop });
+  }
+}
+
+export async function resizeWindowForScale(scale: number, sidePanelOpen = false): Promise<void> {
+  if (!isTauri()) {
+    return;
+  }
+
+  const extraWidth = Math.max(0, 286 * scale - 286);
+  const extraHeight = Math.max(0, 272 * scale - 272);
+  await getCurrentWindow().setSize(
+    new LogicalSize(
+      Math.round(360 + extraWidth + (sidePanelOpen ? 328 : 0)),
+      Math.round(440 + extraHeight),
+    ),
+  );
+}
+
+export async function startWindowDrag(): Promise<void> {
+  if (isTauri()) {
+    await getCurrentWindow().startDragging();
+  }
+}
+
+export async function quitApplication(): Promise<void> {
+  if (isTauri()) {
+    await invoke("quit_app");
+  }
+}
+
+function subscribeToBrowserDemo(handlers: RuntimeHandlers): () => void {
+  handlers.onConnection({
+    status: "disconnected",
+    revision: 0,
+    endpoint: "浏览器预览模式",
+    lastEventAtMs: null,
+    lastError: null,
+  });
+
+  const params = new URLSearchParams(location.search);
+  if (params.get("demo") !== "1") {
+    return () => undefined;
+  }
+
+  const demoStates: AgentStateEvent[] = [
+    { type: "state", state: "thinking", message: "正在理解你的需求。" },
+    { type: "state", state: "planning", message: "正在整理实现步骤。" },
+    { type: "state", state: "coding", message: "正在编写状态渲染器。", file: "src/main.ts" },
+    { type: "state", state: "testing", message: "正在运行端到端检查。" },
+    { type: "state", state: "error", message: "演示一个需要用户确认的错误状态。" },
+    {
+      type: "state",
+      state: "success",
+      message: "桌宠的资源映射和状态展示已经完成，可以开始体验了。",
+    },
+  ];
+  let index = 0;
+  handlers.onConnection({
+    status: "connected",
+    revision: 1,
+    endpoint: "浏览器演示事件",
+    lastEventAtMs: Date.now(),
+    lastError: null,
+  });
+  handlers.onState(demoStates[index]);
+
+  const interval = window.setInterval(() => {
+    index = (index + 1) % demoStates.length;
+    handlers.onState(demoStates[index]);
+  }, 3_500);
+
+  return () => window.clearInterval(interval);
+}

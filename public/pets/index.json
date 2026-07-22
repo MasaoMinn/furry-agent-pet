@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "defaultPackageId": "furry-ai-state",
+  "packages": [
+    {
+      "id": "furry-ai-state",
+      "manifest": "furry-ai-state/pet.json"
+    }
+  ]
+}
