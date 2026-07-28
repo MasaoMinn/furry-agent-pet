@@ -10,8 +10,8 @@ pub const REPEATED_STATE_WINDOW: Duration = Duration::from_millis(50);
 /// states. State transitions and terminal states remain immediate, while a
 /// burst of updates for one state emits only its latest complete payload.
 ///
-/// Events are never merged field-by-field: if the latest event omits `file`
-/// or `message`, the omission must clear the previously displayed detail.
+/// Events are never merged field-by-field: if the latest event omits `file`,
+/// `message`, or `session_title`, the omission clears the previous detail.
 #[derive(Default)]
 pub struct StateEventNormalizer {
     last_emitted: Option<StateEvent>,
@@ -196,6 +196,7 @@ mod tests {
         StateEvent {
             event_type: "state",
             state,
+            session_title: None,
             message: message.map(str::to_owned),
             file: file.map(str::to_owned),
         }

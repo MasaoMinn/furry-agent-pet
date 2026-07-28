@@ -4,9 +4,9 @@
 
 ## 项目简介
 
-`furry-agent-pet` 是一款轻量、离线优先的跨平台桌宠，用角色动作、状态文字和完成气泡展示 MCP Agent 的实时工作阶段。
+`furry-agent-pet` 是一款轻量、离线优先的 Windows 桌宠，用角色动作、状态文字和完成气泡展示 MCP Agent 的实时工作阶段。
 
-应用支持 Windows、macOS 和 Linux，能够表现以下 Agent 状态：
+应用支持 Windows，能够表现以下 Agent 状态：
 
 - `idle`：空闲
 - `thinking`：思考
@@ -23,17 +23,17 @@
 - Tauri 2
 - Rust + Tokio
 - Vanilla TypeScript + Vite
-- Tauri Store、Window State、Single Instance
+- Tauri Store、Window State、Single Instance、Autostart
 - Vitest
 
 ## Agent 接入说明
 
-桌宠本身不是 MCP Server。Agent 需要加载 `furry-companion-mcp`，通过其 `set_state` 工具上报真实进度；runtime 再经本机 Named Pipe 或 Unix Domain Socket 把状态转发给桌宠。
+桌宠本身不是 MCP Server。Agent 需要加载 `furry-companion-mcp`，通过其 `set_state` 工具上报真实进度；runtime 再经 Windows Named Pipe 把状态转发给桌宠。
 
 ```text
 MCP Agent
   -> furry-companion-mcp set_state
-  -> Named Pipe / Unix Domain Socket
+  -> Windows Named Pipe
   -> furry-agent-pet
 ```
 
@@ -82,6 +82,5 @@ Agent 应在真实工作阶段调用 `furry_companion.set_state`：
 默认 IPC 地址：
 
 - Windows：`\\.\pipe\furry-companion-mcp`
-- macOS/Linux：操作系统临时目录中的 `furry-companion-mcp.sock`
 
 完整接入说明见 [`docs/AGENT_INTEGRATION.md`](docs/AGENT_INTEGRATION.md)。

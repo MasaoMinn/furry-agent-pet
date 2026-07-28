@@ -13,7 +13,7 @@
   </head>
 
   <body>
-    <main id="app" class="pet-stage" data-state="idle" data-connection="connecting">
+    <main id="app" class="pet-stage" data-state="idle" data-connection="connecting" data-side-panel-placement="right">
       <div class="pet-column">
       <section
         id="state-bubble"
@@ -24,7 +24,10 @@
         hidden
       >
         <div class="bubble-heading">
-          <span id="bubble-eyebrow">Agent 状态</span>
+          <div class="bubble-context">
+            <strong id="bubble-session-title" class="bubble-session-title" hidden></strong>
+            <span id="bubble-eyebrow">Agent 状态</span>
+          </div>
           <button id="bubble-close" class="bubble-close" type="button" aria-label="关闭消息">
             ×
           </button>
@@ -93,11 +96,6 @@
             <input id="opacity-input" type="range" min="30" max="100" step="5" />
           </label>
 
-          <label class="range-setting">
-            <span>完成气泡 <output id="duration-output">15 秒</output></span>
-            <input id="duration-input" type="range" min="3" max="60" step="1" />
-          </label>
-
           <label class="text-setting">
             <span>宠物资源包</span>
             <select id="pet-package-input" aria-describedby="pet-package-description"></select>
@@ -112,16 +110,28 @@
           <p id="pet-package-status" class="setting-description" role="status" hidden></p>
           <p id="pet-package-error" class="connection-error-label" role="status" hidden></p>
 
-          <details class="state-animation-settings">
-            <summary>逐状态选择动作</summary>
-            <p>留空时跟随资源包默认映射；选择后会固定使用指定动作。</p>
-            <div id="state-animation-grid" class="state-animation-grid"></div>
-          </details>
+          <section class="state-animation-settings" aria-labelledby="state-animation-title">
+            <div id="state-animation-overview">
+              <h2 id="state-animation-title">状态动作</h2>
+              <p>每个状态占一行。点击状态后，在下方展开并选择其他动作。</p>
+              <div id="state-animation-grid" class="state-animation-grid"></div>
+            </div>
+
+            <div id="action-preview-staging" hidden>
+              <img
+                id="action-preview-image"
+                class="action-live-preview"
+                src="/pets/fallback-idle.svg"
+                alt="动作预览"
+                draggable="false"
+              />
+            </div>
+          </section>
 
           <div class="toggle-grid">
             <label><input id="always-on-top-input" type="checkbox" /> 总在最前</label>
+            <label><input id="launch-at-startup-input" type="checkbox" /> 开机自启</label>
             <label><input id="bubble-input" type="checkbox" /> 显示气泡</label>
-            <label><input id="file-input" type="checkbox" /> 显示文件</label>
           </div>
           <p id="connection-error-label" class="connection-error-label" role="status" hidden></p>
 
@@ -129,6 +139,7 @@
             <button id="reconnect-button" type="button">重新连接</button>
             <button id="reset-button" type="button">恢复默认</button>
             <button id="onboarding-button" type="button">接入向导</button>
+            <button id="project-intro-button" type="button">项目介绍</button>
             <button id="quit-button" class="danger-button" type="button">退出应用</button>
           </div>
           <p id="settings-action-error" class="connection-error-label" role="status" hidden></p>
@@ -159,17 +170,97 @@
         </header>
 
         <div class="onboarding-content">
-          <p class="onboarding-intro">
-            复制下面的提示词并发送给你的 Agent。Agent 会检查并接入
-            <code>furry-companion-mcp</code>，随后桌宠会自动显示连接状态。
-          </p>
+          <article id="agent-connection-prompt" class="setup-card agent-prompt-card">
+            <h2>方法 1：发送指令给代理</h2>
+            <p>将下面这句话发送给 Codex 或其他能够编辑自身 MCP 配置的代理：</p>
+            <button id="copy-agent-prompt" class="copy-prompt-button" type="button">
+              复制指令
+            </button>
+            <p class="prompt-lead">请为当前环境安装 Furry Companion MCP：</p>
 
-          <article class="setup-card agent-prompt-card">
-            <h2>发送给 Agent 的提示词</h2>
-            <pre id="agent-connection-prompt" tabindex="0"></pre>
-            <button id="copy-agent-prompt" class="copy-prompt-button" type="button">复制提示词</button>
+            <h3>Codex:</h3>
+            <div class="code-copy-block">
+              <pre id="codex-mcp-command" tabindex="0"></pre>
+              <button
+                class="snippet-copy-button"
+                type="button"
+                data-copy-target="codex-mcp-command"
+                data-copy-label="Codex 命令"
+              >复制</button>
+            </div>
+
+            <h3>Cursor / Claude Desktop:</h3>
+            <p>在 MCP 配置中加入：</p>
+            <div class="code-copy-block">
+              <pre id="agent-mcp-config" tabindex="0"></pre>
+              <button
+                class="snippet-copy-button"
+                type="button"
+                data-copy-target="agent-mcp-config"
+                data-copy-label="MCP 配置"
+              >复制</button>
+            </div>
+
+            <p>安装后请重启 Agent 会话，并验证 MCP tools 中是否出现 <code>set_state</code>。</p>
+            <h3>如果失败：</h3>
+            <ol class="troubleshooting-list">
+              <li>
+                <span>先确认 Node.js 和 npm 可用：</span>
+                <div class="code-copy-block compact-code-block">
+                  <pre id="node-npm-check-command" tabindex="0"></pre>
+                  <button
+                    class="snippet-copy-button"
+                    type="button"
+                    data-copy-target="node-npm-check-command"
+                    data-copy-label="Node.js 检查命令"
+                  >复制</button>
+                </div>
+              </li>
+              <li>
+                <span>测试包能运行：</span>
+                <div class="code-copy-block compact-code-block">
+                  <pre id="mcp-run-command" tabindex="0"></pre>
+                  <button
+                    class="snippet-copy-button"
+                    type="button"
+                    data-copy-target="mcp-run-command"
+                    data-copy-label="MCP 测试命令"
+                  >复制</button>
+                </div>
+              </li>
+              <li>
+                <span>若提示权限或网络错误，清理 npm 缓存后重试：</span>
+                <div class="code-copy-block compact-code-block">
+                  <pre id="npm-cache-command" tabindex="0"></pre>
+                  <button
+                    class="snippet-copy-button"
+                    type="button"
+                    data-copy-target="npm-cache-command"
+                    data-copy-label="npm 缓存命令"
+                  >复制</button>
+                </div>
+              </li>
+              <li>若 MCP 已存在，先移除旧配置再重新添加。</li>
+            </ol>
             <p id="copy-agent-prompt-status" class="copy-status" role="status">
-              复制后粘贴给 Agent，并按 Agent 的提示完成连接。
+              可复制完整指令，也可以单独复制每段命令或配置。
+            </p>
+          </article>
+
+          <article class="setup-card manual-setup-card">
+            <h2>方法 2：手动配置 MCP</h2>
+            <p>将 MCP 服务器条目添加到客户端配置中。</p>
+            <div class="code-copy-block">
+              <pre id="manual-mcp-config" tabindex="0"></pre>
+              <button
+                class="snippet-copy-button"
+                type="button"
+                data-copy-target="manual-mcp-config"
+                data-copy-label="手动 MCP 配置"
+              >复制</button>
+            </div>
+            <p>
+              更改 MCP 配置后，请重启代理。当前代理会话通常无法热加载新添加的 MCP 工具。
             </p>
           </article>
 

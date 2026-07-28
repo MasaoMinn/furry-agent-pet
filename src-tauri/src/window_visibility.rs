@@ -15,9 +15,7 @@ const MAIN_WINDOW_LABEL: &str = "main";
 /// The window starts hidden in `tauri.conf.json`. A saved `visible: true`
 /// state (or the absence of a prior state) shows it after its position has
 /// been validated. If the tray could not be created, the window is always
-/// shown so the application cannot become unreachable. Linux also starts
-/// visible because a successfully-created tray is not guaranteed to be
-/// exposed by every desktop shell.
+/// shown so the application cannot become unreachable.
 pub fn restore_initial<R: Runtime>(
     app: &AppHandle<R>,
     tray_available: bool,
@@ -46,7 +44,7 @@ pub fn restore_initial<R: Runtime>(
 }
 
 fn should_show_initial(tray_available: bool, saved_visibility: Option<bool>) -> bool {
-    cfg!(target_os = "linux") || !tray_available || saved_visibility.unwrap_or(true)
+    !tray_available || saved_visibility.unwrap_or(true)
 }
 
 fn saved_main_visibility<R: Runtime>(app: &AppHandle<R>) -> Option<bool> {
@@ -96,10 +94,6 @@ mod tests {
         assert!(should_show_initial(true, Some(true)));
         assert!(should_show_initial(true, None));
 
-        #[cfg(target_os = "linux")]
-        assert!(should_show_initial(true, Some(false)));
-
-        #[cfg(not(target_os = "linux"))]
         assert!(!should_show_initial(true, Some(false)));
     }
 }

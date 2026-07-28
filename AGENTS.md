@@ -2,7 +2,7 @@
 
 ## Project purpose
 
-furry-agent-pet is a lightweight Windows, macOS, and Linux desktop companion. It consumes local state events emitted by `furry-companion-mcp` and turns Agent phases into pet animation, status text, and completion speech bubbles.
+furry-agent-pet is a lightweight Windows desktop companion. It consumes local state events emitted by `furry-companion-mcp` and turns Agent phases into pet animation, status text, and completion speech bubbles.
 
 The product requirements in `docs/PRD.md` are the source of truth. Keep implementation decisions aligned with that document, and update the PRD when an approved requirement changes.
 
@@ -11,7 +11,7 @@ The product requirements in `docs/PRD.md` are the source of truth. Keep implemen
 - Tauri 2 application shell.
 - Rust owns IPC, protocol validation, window/tray control, diagnostics, and the Tauri Store backend used for settings persistence. The frontend may validate and submit settings, but it must not invent a second persistence format.
 - Vanilla TypeScript, HTML, and CSS own presentation. Do not add a frontend framework unless the product has outgrown this structure and the tradeoff is documented.
-- Windows uses `\\.\pipe\furry-companion-mcp`; macOS/Linux use `furry-companion-mcp.sock` inside the operating system's temporary directory by default. Do not hardcode `/tmp` because macOS may resolve its temporary directory elsewhere.
+- Windows uses `\\.\pipe\furry-companion-mcp` by default.
 - IPC messages are newline-delimited JSON and must remain compatible with `furry-companion-mcp` 0.2.x.
 - The supported states are `idle`, `thinking`, `planning`, `coding`, `testing`, `success`, and `error`.
 
@@ -87,13 +87,11 @@ On Windows, use the MSVC Rust toolchain. This workspace has a rustup directory o
 - Avoid permanent timers and high-frame-rate animation while idle. Prefer CSS transforms/opacity or bounded sprite animation.
 - Do not add heavy dependencies when the platform or standard library can provide the behavior clearly.
 
-## Cross-platform expectations
+## Windows platform expectations
 
-- Do not claim cross-platform completion from a Windows-only build.
-- Keep OS-specific code behind narrow modules and `cfg` gates.
+- Do not add macOS or Linux runtime, packaging, CI, or documentation paths unless product scope changes again.
 - Window position restoration must account for disconnected monitors and DPI changes.
-- Linux behavior must be tested on at least one X11 and one Wayland environment before calling the related acceptance criteria complete.
-- Platform-specific limitations must be documented rather than hidden behind inconsistent behavior.
+- Validate supported Windows versions and architectures explicitly; do not infer Windows 10 or ARM64 support from Windows 11 x64 results.
 
 ## Pet assets
 
@@ -117,6 +115,10 @@ On Windows, use the MSVC Rust toolchain. This workspace has a rustup directory o
 
 Choose checks proportional to the change, with these minimums:
 
+- Small copy, styling, label, or single-control UI changes do not require the full `npm run check` or Windows native smoke suite. Run the directly related Vitest files plus `npm run check:frontend`; add `npm run build` when markup, CSS, imports, or bundling changed. Escalate to the broader checks below when a change crosses Rust, persistence, IPC, window behavior, package validation/security boundaries, installer behavior, or a release claim.
+
+- The latest Windows-only isolated Debug baseline is `.cache/native-windows-smoke/1785137435175-5396` from 2026-07-27. It used the 20,404,224-byte EXE (SHA-256 `CBE158124FABDFDAB948E2BFBAC71CF670FE0F069E11FAD4D5157D7B440D720E`) produced by the immediately preceding current-source rebuild; the successful rerun itself used `--skip-build`, with no product-source changes between build and run. `success=true` and `cleanupSafe=true`. It validates the 10-key Store, real Windows autostart enable/disable with no registry residue, `session_title` rendering, and the critical right-edge layout: after dragging the pet to a 48-physical-pixel right gap, settings opens on the left with both pet and panel contained in the work area, settings-window drag is exactly `(-72,48)`, and closing preserves the post-drag pet anchor. It also passes all seven states, 140-sample latency (p50 1.54 ms, p95 5.58 ms, max 6.17 ms), 1001 events to 2 DOM mutations, `sleeping.gif` after 60,057.38 ms, real tray operations, restart persistence, and isolated cleanup. `npm run check` passes 17/17 Vitest files, 84/84 frontend tests, and 57/57 Rust tests.
+
 - TypeScript/UI change: `npm run check:frontend` and `npm run build`.
 - Rust/config/plugin change: `npm run check:rust` and `npm run format:rust -- --check`.
 - Window or IPC behavior: run `npm run tauri:dev` and exercise the changed behavior locally.
@@ -124,7 +126,7 @@ Choose checks proportional to the change, with these minimums:
 - Window restoration: test a disconnected monitor, a negative-coordinate layout, and mixed-DPI displays; unit-tested geometry alone is not a runtime acceptance result.
 - The latest current-source Windows isolated Debug baseline is `.cache/native-windows-smoke/1784697111517-1268` from 2026-07-22: a complete source rebuild produced a 20,264,448-byte EXE with SHA-256 `BE0C7AD5499978751AC0BEA81CDA641DEA3F01C88FFCC731EF4E2B78F8AB5382`; `success=true` and `cleanupSafe=true`. It records both system and manual reduced-motion behavior (`idle.gif`/`hovering-bob -> fallback-idle.svg`/`none -> idle.gif`/`hovering-bob`), persists manual `reduceMotion=true` through the Rust Store and an application restart, nested hover/drag actions, a bounded `clicked` action that restores after its default 650 ms, no synthesized click during the real requested/observed `(96,64)` drag, 140-sample latency (p50 1.35 ms, p95 5.70 ms, max 6.68 ms), the 1001-event-to-2-mutation burst check, `sleeping.gif` after 60,020.66 ms, all six real tray actions, and cleanup. `npm run check` passed 14/14 Vitest files, 74/74 frontend tests, and 57/57 Rust tests. Optional package `interactions.*.durationMs` is bounded to 100-60,000 ms in TypeScript and Rust, drives timed actions, serializes as camelCase, and survives managed snapshot reload after the source is removed. Package-provided interaction animations and the built-in CSS fallback are mutually exclusive; the bundled four-GIF package has empty `interactions`, so the native run exercises its fallback effects while custom mapping/duration boundaries are automated. Package-provided `reducedMotionAnimations` has frontend, Rust validation, and managed-snapshot coverage; the bundled package has no licensed static targets, so the native run exercises its generic static fallback. The installed Release baseline below predates these layers and has not been rerun for the changes.
 - The previous 2026-07-16 current-source Windows isolated Debug baseline is the 188.820-second evidence lifecycle at `.cache/native-windows-smoke/1784201511453-9204` (generated `2026-07-16T11:32:14.653Z`, completed `2026-07-16T11:35:23.473Z`): 20,196,864 bytes, SHA-256 `33D052E6D24DB481F364AAC23BF6582784F3911377F5676ED725A42BC17836F4`. Native protocol/UI, all seven states, error acknowledgement, success bubble, hover replay, onboarding/settings Store v1, Rust-owned settings restart restoration, bounded reconnect, single-instance, 140-sample latency (p50 1.53 ms, p95 6.08 ms, max 8.25 ms), and the 1001-event-to-2-mutation burst check pass. The same run observes the real `idle -> sleeping` change after 60,018.8381 ms with a complete 576 x 530 image and no image errors, transparent compositor pixels against two backdrops, actual topmost Z-order, equal client/window bounds, and a real `(96,64)` mouse drag. Its `tray-integration.json` records real interaction with all six tray actions: connected/disconnected menu status, left-click hide/show, menu hide/show, centered position restore, opening and focusing settings while hidden, native/UI/menu topmost synchronization, reconnect, and hidden-window tray exit with code 0. Only connected/disconnected were observed through the live menu; connecting/disabled are unit-tested mappings. The status tooltip assertion is the bound tray icon's UIA accessible name containing the status, not a pixel-exact visual tooltip check, and ordinary taskbar-icon absence was not explicitly verified. Earlier Debug interaction evidence also covers native-dialog import, hash-identical manifest/four-GIF snapshotting, restart and animated playback after the source was renamed, UI deletion with fallback to `furry-ai-state`, and recovery from `(1000000, 1000000)` into a `2560x1600` screen. The Debug link step emits a non-blocking MSVC `LNK4099` warning for missing runtime PDB files.
-- The 2026-07-16 installer baseline has an unsigned formal NSIS (5,664,565 bytes, SHA-256 `EA181EFE9A93B153570AA92D893F351049492E821BED7C5064559163E79DF5DF`) and unsigned isolated NSIS (5,665,555 bytes, SHA-256 `E629E932BEB152191A46C98EC73A8F102D49FD5FD98488C1F8B343119F39E7AF`); both are `NotSigned`. The authoritative report is `.cache/windows-installer-smoke/1784201848768-33384/installer-smoke-report.json`. The installed isolated Release at `.cache/native-windows-smoke/1784202165728-19428` passed its then-current full suite, but predates interaction actions and reduced-motion fallback. Physical multi-monitor/mixed-DPI/negative-coordinate layouts, Windows 10/ARM64, macOS, and Linux X11/Wayland still require native testing; signing, final artwork licensing, real external Agent-client UI integration, actual licensed static poster assets, and the PRD resource targets also remain open. See `docs/SMOKE_TEST_REPORT.md`.
+- The 2026-07-16 installer baseline has an unsigned formal NSIS (5,664,565 bytes, SHA-256 `EA181EFE9A93B153570AA92D893F351049492E821BED7C5064559163E79DF5DF`) and unsigned isolated NSIS (5,665,555 bytes, SHA-256 `E629E932BEB152191A46C98EC73A8F102D49FD5FD98488C1F8B343119F39E7AF`); both are `NotSigned`. The authoritative report is `.cache/windows-installer-smoke/1784201848768-33384/installer-smoke-report.json`. The installed isolated Release at `.cache/native-windows-smoke/1784202165728-19428` passed its then-current full suite, but predates interaction actions and reduced-motion fallback. Physical multi-monitor/mixed-DPI/negative-coordinate layouts and Windows 10/ARM64 still require native testing; signing, final artwork licensing, real external Agent-client UI integration, actual licensed static poster assets, and the PRD resource targets also remain open. See `docs/SMOKE_TEST_REPORT.md`.
 - Protocol parsing: cover valid events, partial lines, multiple lines, invalid JSON, unknown states, and oversized fields.
 - Completion bubble: cover a normal success message, missing message fallback, long message expansion, timer pause, and manual close.
 - Release claim: run a Tauri build on every claimed target OS and record the artifact and smoke-test result.

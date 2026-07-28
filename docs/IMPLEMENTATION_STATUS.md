@@ -1,7 +1,60 @@
 # 实现状态
 
-更新日期：2026-07-22  
-当前里程碑：Agent 状态、用户交互动作与 reduced-motion 静态替代已拆成正交层。角色包可通过可选 `interactions` 声明 `hovering`、`dragging`、`clicked` 等动作及一次性动作时长，并用 `reducedMotionAnimations` 为任意 GIF 动作指定非循环 PNG/WebP；token 化控制器负责可嵌套动作，可复用的定时控制器负责有界一次性动作。系统请求与用户手动开关取“或”，只有两者都关闭后才恢复最新状态或交互。既有四 GIF、七状态映射和 60 秒 sleeping 兼容不变。当前代码通过 14/14 Vitest 文件、74/74 前端测试、57/57 Rust 测试、TypeScript、`cargo check`、`cargo fmt --check` 与 production build；Windows 当前 Debug 已通过完整原生套件。安装后 Release、macOS 和 Linux 尚未复跑本次动作层与静态降级变更。完整证据见 [`SMOKE_TEST_REPORT.md`](SMOKE_TEST_REPORT.md)。
+更新日期：2026-07-28
+当前里程碑：v0.2.0 已接入七状态专属预设资源、可展开动作预览、双路径 MCP 接入教程与项目介绍入口；应用范围为 Windows-only，并支持 Windows 开机自启、设置/向导侧栏自动左右避让和可选会话标题气泡。Agent 状态、用户交互动作与 reduced-motion 静态替代保持正交；既有四 GIF、七状态协议和 60 秒 `idle → sleeping` 兼容不变。完整历史证据见 [`SMOKE_TEST_REPORT.md`](SMOKE_TEST_REPORT.md)。
+
+## 2026-07-28 v0.2.0 Windows 安装包
+
+- npm、Rust crate 与 Tauri 配置版本统一为 `0.2.0`。
+- `npm run check` 通过 24/24 Vitest 文件、109/109 前端测试、57/57 Rust 测试、TypeScript、`cargo check`、`cargo fmt --check` 和 production build。
+- `npm run tauri:build:windows -- --no-sign --ci` 生成 15,654,606-byte NSIS `furry-agent-pet_0.2.0_x64-setup.exe`，SHA-256 `7B564985A5777C7499E4A94DDC28217AA9E24F49FD45A7C8E34EF7253B01B090`，Authenticode `NotSigned`；portable EXE 为 24,446,976 bytes，SHA-256 `6278CCF8F5FB4EC615FA8E83DFFCBECFB64887858650D94BEF0D4C0AE0B96350`。
+- 安装器 preflight 因本机存在用户的 v0.1.0 安装记录而安全停止；未覆盖、卸载或清理现有应用，本轮不声明安装生命周期通过。Release 链接仍有非阻断 `LNK4099` 调试符号警告。
+
+## 2026-07-28 接入教程与项目介绍
+
+- 动作候选不再显示角色外观或动作情节的叙述性文案，只保留状态、动作 ID 和必要的中性无障碍文本。
+- 接入向导改为“发送指令给代理”和“手动配置 MCP”两种方法；完整 Agent 指令、Codex 命令、两处 MCP JSON，以及三条排障命令均可独立复制。
+- 设置页新增“项目介绍”按钮。Tauri Opener 仅被授权使用系统浏览器打开指定飞书 HTTPS 页面，不开放任意 URL 或本地路径。
+- `npm run check` 通过 TypeScript、21/21 Vitest 文件、103/103 前端测试、57/57 Rust 测试、`cargo check`、`cargo fmt --check` 和 production build；随后新增固定 URL 调用回归并复跑为 22/22 Vitest 文件、104/104 前端测试。
+
+## 2026-07-28 设置微调
+
+- “复制指令”改为卡片右上角的小按钮；复制成功或失败时按钮直接显示结果，1.6 秒后恢复原文，所有代码段复制按钮使用相同行为。
+- 内置资源包下拉项只显示 `Furry AI State`，不附带版本号；本地导入包保留来源与版本信息。
+- 设置页移除“显示文件”勾选框，前端规范化会把旧 `showFilePath=true` 强制关闭；Rust Store 字段暂时保留用于向后兼容，产品 UI 不再允许开启。
+- 开发规范明确：文案、样式、标签或单一控件的小改动只跑相关 Vitest、TypeScript 和必要的前端构建，不默认执行完整检查或 Windows 原生冒烟。
+- 本次按该规范运行 4 个相关 Vitest 文件、21 个定向测试、`npm run check:frontend`、`npm run build`、native smoke 脚本语法检查和 `git diff --check`，均通过；未运行完整 Rust 或 Windows 原生套件。
+
+## 2026-07-28 七状态预设资源与状态专属选择
+
+- 从 `D:\IntegratedSourceOnDesktop\furry-ai-state\media\images` 接入七个状态目录中的 22 个逻辑预设。相同字节通过多个状态专属动画 ID 引用同一 `source`，因此包内实际保存 13 份唯一媒体；四个初始 GIF 的原路径与 SHA-256 保持不变。
+- manifest 新增可选 `stateAnimationChoices`。显式声明时七状态必须齐全，每状态 1–16 个、整包最多 64 个、不得重复或引用未知动作，并且必须包含默认动作；延迟变体也只能引用所属状态候选。旧包省略时兼容为每状态只允许默认动作。
+- 设置页仅从当前状态的候选列表生成动作卡；运行时解析和旧 Store override 校验使用相同列表，跨状态动作不会显示或渲染。15 个 GIF 逻辑动作均映射到所属状态的静态 PNG，系统减少动态效果不再退回通用占位图。
+- 13 份唯一媒体已完成首帧联系表视觉检查；TypeScript 的真实 catalog 回归和 Rust `validate_package_source()` 已通过，确认媒体集合精确匹配、13 个唯一文件均可解码，整包为 13,036,029 bytes / 89,244,857 解码像素，满足既有 64 MiB / 120,000,000 像素边界。`npm run check` 通过 19/19 Vitest 文件、94/94 前端测试、57/57 Rust 测试、TypeScript、`cargo check`、`cargo fmt --check` 和 production build。
+- 当前源码完整重建的 Windows Debug run `.cache/native-windows-smoke/1785220817686-16956` 为 `success=true`、`cleanupSafe=true`；30,294,016-byte EXE 的 SHA-256 为 `0DB8A51193DC3E3CAC8E9835363647D6086B2F4AC83A2C92457A3DC25B759212`。真实 WebView2 中 coding 行恰有 3 个本状态候选，跨状态 `error-2` 不存在；无 hover/焦点时 `coding-2` 已生成 132 px 宽静态首帧，选择后实时播放 `coding-2.gif`，恢复后播放默认 `coding.gif`。系统 reduced-motion 从 `idle.gif` 切换到包内 `idle-static.png`，恢复后回到 `idle.gif`。完整套件还通过七状态、140 样本 p50 `1.47 ms` / p95 `10.44 ms` / max `13.04 ms`、1001 条事件到 2 次 DOM marker、`sleeping.gif` 于 `60,045.80 ms` 激活、真实托盘/窗口/设置/开机自启/重启持久化和隔离清理。
+
+## 2026-07-28 状态与候选动作卡片
+
+- 动作设置总览改为七个整行状态项，每项直接显示当前动作；点击状态后在该行下方展开候选动作，再次点击可收起，选择后保持该行展开并立即更新状态动作。
+- 状态与候选卡片无需 hover 或键盘聚焦即可看到实际媒体预览。GIF 通过 `fetch`、`createImageBitmap` 和有界画布生成并缓存首帧 PNG，PNG/WebP 直接作为静态预览；所有卡片仍只共享一个生产 `PetRenderer` 实时动画元素，当前状态或当前选中候选播放实时动画，不会同时解码全部 GIF 动画。
+- 设置打开时点击宠物周围空白会关闭设置；宠物、状态栏、气泡、向导和设置内容均属于保护区域。
+- `npm run check` 通过 19/19 Vitest 文件、93/93 前端测试、56/56 Rust 测试及生产构建。当前源码完整重建的 20,403,200-byte Debug EXE（SHA-256 `1B467A6F03CF59013ACBC18FCCD63CCAE0149A9C3AF3D0934C0CF2DA8FB71D76`）在 `.cache/native-windows-smoke/1785211873195-29520` 实际记录七个等宽整行状态项、coding 行内 5 张候选卡，以及未 hover、未聚焦的 `exhausted.gif` 候选生成 130 × 120 PNG 首帧；选择后实时播放 `exhausted.gif`，恢复默认后实时播放 `coding.gif`。该 run 在后段 60 秒 idle 计时器调度探针超时，另两次复跑因检测到外部鼠标移动而由全局输入安全锁中止，因此本轮定向原生证据有效，但不替代此前 `success=true` 的完整 Windows 基线。
+
+## 2026-07-27 v0.1.1 动作预览与设置精简
+
+- 设置页不再显示或持久化“完成气泡时间”；旧 Store 中的 `successBubbleDurationMs` 会在规范化保存时移除，成功消息统一使用 15 秒自动关闭行为。
+- “动作选择与预览”只渲染当前聚焦或刚切换的状态动作，并复用生产 `PetRenderer`、角色包解析和系统 reduced-motion 降级路径；不会为预览同时加载全部 GIF。
+- npm、Rust crate 与 Tauri 配置版本统一为 `0.1.1`。
+- `npm run check` 通过 17/17 Vitest 文件、84/84 前端测试、56/56 Rust 测试及生产构建。当前 Windows WebView2 run 已实际验证固定 15 秒关闭后仍可悬停回看完成内容、动作预览切换到 `exhausted.gif` 并恢复 `coding.gif`、旧时长控件缺失与 9 字段 Store；完整套件随后两次因外部鼠标移动触发全局输入安全门而中止，未把本轮标记为新的全量原生成功基线。
+- v0.1.1 NSIS 已生成：5,781,877 bytes，SHA-256 `0BCEB9BF192A4A95E53A665E3DA0C0C3823BA0166CFC97E7FD9F3925CA39BFB0`，Authenticode `NotSigned`。
+
+## 2026-07-27 Windows-only、开机自启与会话区分
+
+- Rust 运行时、默认 IPC、打包配置、CI 和开发脚本只保留 Windows 路径；默认端点固定为 Named Pipe `\\.\pipe\furry-companion-mcp`，NSIS 是唯一安装包目标。
+- 设置页新增由 Rust Store 持久化的“开机时启动”开关。Rust 在保存前同步 Windows 登录启动注册，失败时不会把未生效的值写成成功；隔离原生冒烟真实启用/禁用专属 Run 值并确认无残留。
+- 侧栏布局使用当前显示器物理工作区、DPI、桌宠锚点和左右溢出量选择展开方向。原生 run `.cache/native-windows-smoke/1785137435175-5396` 把桌宠拖到右缘 48 px，确认设置从左侧完整展开；拖动设置窗口后关闭，桌宠保持新的锚点。
+- JSON Lines 事件可携带可选 `session_title`，Rust 与 TypeScript 都限制长度并按纯文本渲染。success 原生证据显示“IPC 演示会话”；当前 `furry-companion-mcp 0.2.0` 的 `set_state` 工具尚未暴露该参数，因此已接入的旧 Agent 仍兼容但不能主动填写标题。
+- `npm run check` 通过 17/17 Vitest 文件、84/84 前端测试、57/57 Rust 测试；上述原生 run 为 `success=true`、`cleanupSafe=true`，使用 20,404,224-byte Debug EXE（SHA-256 `CBE158124FABDFDAB948E2BFBAC71CF670FE0F069E11FAD4D5157D7B440D720E`）。
 
 ## 2026-07-22 减少动态效果
 
@@ -95,14 +148,13 @@ Windows 隔离 Debug runtime 中把窗口左上角设为 `(1000000, 1000000)` �
 - 此前 `2D4A…` / `5E93…`、`FCD4…` / `FB79…`、`BE55…` / `267D…` 和 `0291…` / `5829…` 哈希只保留为较早源码的历史记录，不再代表当前源码安装器。
 - 尚未验证签名、升级/降级、自动更新、快捷方式生命周期、正式身份安装后的全量交互、本地角色包原生 dialog/import/delete/恶意包 UI，以及 Windows 10/ARM64。
 
-## 已实现但尚未在目标平台验证
+## 已实现但尚未完成 Windows 实机矩阵验证
 
-- macOS/Linux Unix Domain Socket 连接代码。
-- Tauri 的透明窗口、菜单栏/托盘、文件选择器、受限 asset protocol 和窗口恢复代码路径。
-- GitHub Actions 的 Windows、macOS、Linux 检查与无安装包编译矩阵。
-- Linux 可达性降级：启动时始终显示主窗口，关闭请求直接退出而不依赖可能不可见的托盘；该代码路径仍需在 X11 和 Wayland 分别原生验证。
+- Tauri 的透明窗口、Windows 托盘、文件选择器、受限 asset protocol 和窗口恢复代码路径。
+- GitHub Actions 的 Windows 检查与无安装包编译任务。
+- Windows Named Pipe、开机自启注册和设置同步代码路径。
 
-当前仓库尚未推送并观察远程 CI 运行结果。在 macOS、Linux X11 和 Linux Wayland 上完成原生构建、安装与运行冒烟测试前，不宣称这些平台已交付。
+当前仓库尚未推送并观察本轮远程 CI 运行结果。Windows 10/11、x64/ARM64 和物理多显示器矩阵仍需分别验证。
 
 ## 仓库中已有的相关自动化覆盖
 
@@ -123,14 +175,13 @@ Windows 隔离 Debug runtime 中把窗口左上角设为 `(1000000, 1000000)` �
 - Windows 原生文件对话框对路径穿越、超限或损坏包的拒绝场景仍缺少逐项 UI 手工冒烟；相应 Rust/TypeScript 边界已有自动化测试。
 - Windows 真实多显示器拔插、负坐标布局和 100%/150%/200% DPI 切换；隐藏退出/重启和第二实例唤醒已有当前机器证据。
 - 2026-07-16 源码基线的 Windows 安装器正式安装/卸载与隔离安装后全量原生桌面集成已经复跑；当前交互动作与 reduced-motion 更新尚未重建安装后 Release。签名、升级/降级、自动更新、快捷方式生命周期、Windows 10/ARM64，以及正式身份安装后的全量交互仍未完成。
-- macOS、Linux 原生安装包与目标平台运行时验证；跨平台 CI 定义已添加，但尚未远程执行。
 - 安装后的桌宠 UI、发布版 `furry-companion-mcp` 与真实 Agent 客户端三者的完整端到端验收。
 - 选择气泡文本暂停和 file-only 详情已有前端自动化覆盖，但尚未在原生 WebView 中逐项交互验收。
-- Windows Debug 当前源码完整重建复跑测得 140 样本状态文本/DOM 标记 p50 `1.35 ms`、p95 `5.70 ms`、max `6.68 ms`；2026-07-16 安装后 Release 为 p50 `1.22 ms`、p95 `5.11 ms`、max `6.07 ms`。两者的原生 1001 条 burst 都对应 2 次 DOM marker 更新；尚未覆盖 GIF 首帧像素时间，也未形成统一的三平台 CPU、内存、启动耗时、状态延迟与 Runtime 重启性能脚本。
+- Windows Debug 当前源码完整重建复跑测得 140 样本状态文本/DOM 标记 p50 `1.35 ms`、p95 `5.70 ms`、max `6.68 ms`；2026-07-16 安装后 Release 为 p50 `1.22 ms`、p95 `5.11 ms`、max `6.07 ms`。两者的原生 1001 条 burst 都对应 2 次 DOM marker 更新；尚未覆盖 GIF 首帧像素时间，也未形成覆盖目标 Windows 版本与架构的 CPU、内存、启动耗时、状态延迟与 Runtime 重启性能脚本。
 - 当前自动化已在 Debug 与安装后 Release 都验证透明合成像素、实际 Z-order、无边框 client geometry、真实鼠标拖动和真实托盘六项菜单；普通任务栏图标缺失仍未明确验证，connecting/disabled 状态仍只有单测映射，tooltip 只验证绑定托盘图标的 UIA accessible name，不是像素级检查。
 - 系统 `prefers-reduced-motion` 与用户手动开关的 GIF→内置静态角色→GIF 恢复、手动设置落盘和跨重启恢复已有原生证据；包内按动画静态映射已有前端/Rust/受管快照自动化，仍缺初始角色的实际授权 poster、切换前后 CPU/内存量化和 GIF 首帧像素时间。
 - 角色包导出、导入版本管理和可见的坏快照诊断；当前坏快照会安全跳过，但不会在 UI 中逐包解释原因。
-- Windows 代码签名、macOS 签名与公证、正式发布元数据和美术再分发授权；内置资源许可仍为 placeholder。
+- Windows 代码签名、正式发布元数据和美术再分发授权；内置资源许可仍为 placeholder。
 - PRD 80 MB 完整应用稳态内存与 idle 单核 1% CPU 目标；当前 Windows WebView2 进程树与 animated GIF 路径均高于目标。
 - 当前 Debug 完整重建的链接阶段出现 MSVC runtime PDB 缺失的 `LNK4099` 警告；EXE 已成功构建并通过全量运行冒烟，暂列非阻断构建警告。
 
@@ -147,4 +198,4 @@ npm run tauri:build:windows -- --no-sign --ci
 npm run smoke:mcp:published -- --runtime <furry-companion-mcp-dist-index.js>
 ```
 
-隔离 Windows Debug runtime 已走完有效本地包导入、源目录失效后重启、GIF 播放、UI 删除、完全离屏位置恢复，以及当前源码的状态 UI、交互动作、reduced-motion 静态降级、异常协议、向导/Store v1、自动重连、窗口、单实例、透明合成、实际 Z-order、无边框 client geometry、真实鼠标拖动、真实 60 秒 sleeping 和托盘六项菜单冒烟。2026-07-16 安装器基线已完成当时源码的正式安装/卸载及隔离 Release 全量套件，但需要针对当前交互层和静态降级重新构建。后续仍需补坏包 UI 拒绝、正式身份安装后全量交互、普通任务栏图标缺失、快捷方式、物理显示器拔插/负坐标/混合 DPI、升级/降级、Windows 10/ARM64、真实外部 Agent UI 与 macOS/Linux 实机。
+隔离 Windows Debug runtime 已走完有效本地包导入、源目录失效后重启、GIF 播放、UI 删除、完全离屏位置恢复，以及当前源码的状态 UI、交互动作、reduced-motion 静态降级、异常协议、向导/Store v1、自动重连、窗口、单实例、透明合成、实际 Z-order、无边框 client geometry、真实鼠标拖动、真实 60 秒 sleeping 和托盘六项菜单冒烟。2026-07-16 安装器基线已完成当时源码的正式安装/卸载及隔离 Release 全量套件，但需要针对当前交互层和静态降级重新构建。后续仍需补坏包 UI 拒绝、正式身份安装后全量交互、普通任务栏图标缺失、快捷方式、物理显示器拔插/负坐标/混合 DPI、升级/降级、Windows 10/ARM64 与真实外部 Agent UI。

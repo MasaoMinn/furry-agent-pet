@@ -4,9 +4,9 @@
 
 ## Introduction
 
-`furry-agent-pet` is a lightweight, offline-first, cross-platform desktop companion that visualizes an MCP Agent's real-time work through character animations, status text, and completion bubbles.
+`furry-agent-pet` is a lightweight, offline-first Windows desktop companion that visualizes an MCP Agent's real-time work through character animations, status text, and completion bubbles.
 
-The app supports Windows, macOS, and Linux and represents these Agent states:
+The app supports Windows and represents these Agent states:
 
 - `idle`
 - `thinking`
@@ -23,17 +23,17 @@ The pet receives state updates through local IPC. It does not read an Agent's pr
 - Tauri 2
 - Rust + Tokio
 - Vanilla TypeScript + Vite
-- Tauri Store, Window State, and Single Instance
+- Tauri Store, Window State, Single Instance, and Autostart
 - Vitest
 
 ## Agent Integration
 
-The desktop pet is not an MCP server. The Agent loads `furry-companion-mcp` and reports real progress through its `set_state` tool. The runtime then forwards state events to the pet through a local named pipe or Unix domain socket.
+The desktop pet is not an MCP server. The Agent loads `furry-companion-mcp` and reports real progress through its `set_state` tool. The runtime then forwards state events to the pet through a local Windows named pipe.
 
 ```text
 MCP Agent
   -> furry-companion-mcp set_state
-  -> Named Pipe / Unix Domain Socket
+  -> Windows Named Pipe
   -> furry-agent-pet
 ```
 
@@ -79,9 +79,8 @@ Example:
 }
 ```
 
-Default IPC addresses:
+Default IPC address:
 
 - Windows: `\\.\pipe\furry-companion-mcp`
-- macOS/Linux: `furry-companion-mcp.sock` inside the operating system's temporary directory
 
 See [`docs/AGENT_INTEGRATION.md`](docs/AGENT_INTEGRATION.md) for the complete integration guide.

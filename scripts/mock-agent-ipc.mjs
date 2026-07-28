@@ -1,45 +1,46 @@
 #!/usr/bin/env node
 
 import net from "node:net";
-import os from "node:os";
-import path from "node:path";
 
-const DEFAULT_ADDRESS =
-  process.platform === "win32"
-    ? String.raw`\\.\pipe\furry-companion-mcp`
-    : path.join(os.tmpdir(), "furry-companion-mcp.sock");
+const DEFAULT_ADDRESS = String.raw`\\.\pipe\furry-companion-mcp`;
 
 const DEMO_EVENTS = [
   {
     type: "state",
     state: "thinking",
+    session_title: "IPC 演示会话",
     message: "正在理解任务和收集上下文。",
   },
   {
     type: "state",
     state: "planning",
+    session_title: "IPC 演示会话",
     message: "正在整理实现步骤。",
   },
   {
     type: "state",
     state: "coding",
+    session_title: "IPC 演示会话",
     message: "正在编写桌宠状态渲染逻辑。",
     file: "src/state-renderer.ts",
   },
   {
     type: "state",
     state: "testing",
+    session_title: "IPC 演示会话",
     message: "正在运行本地构建与交互检查。",
     file: "src/state-renderer.test.ts",
   },
   {
     type: "state",
     state: "error",
+    session_title: "IPC 演示会话",
     message: "演示一个需要用户确认的错误状态。",
   },
   {
     type: "state",
     state: "success",
+    session_title: "IPC 演示会话",
     message: "桌宠的状态演示已经完成，现在可以查看任务结束气泡了。",
     file: "src/state-renderer.ts",
   },
@@ -49,7 +50,7 @@ function printHelp() {
   console.log(`Usage: node scripts/mock-agent-ipc.mjs [options]
 
 Options:
-  --address <path>  Override the named pipe or Unix socket address.
+  --address <path>  Override the Windows named pipe address.
   --demo            Send thinking -> planning -> coding -> testing -> error -> success.
   --protocol-test   Send fragmented, combined, blank, CRLF, and invalid input.
   --client-delay <milliseconds>

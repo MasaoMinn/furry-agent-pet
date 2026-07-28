@@ -28,7 +28,9 @@ const nativeProbePath = path.join(root, "scripts", "windows-native-probe.ps1");
 const trayProbePath = path.join(root, "scripts", "windows-tray-probe.ps1");
 const config = JSON.parse(readFileSync(configPath, "utf8"));
 const identifier = String(config.identifier ?? "");
+const smokeAutostartValueName = String(config.productName ?? "");
 const expectedSuccess = "桌宠的状态演示已经完成，现在可以查看任务结束气泡了。";
+const expectedSessionTitle = "IPC 演示会话";
 const requiredStates = ["idle", "thinking", "planning", "coding", "testing", "error", "success"];
 const metricBindingName = "__nativeSmokeReport";
 const latencyMarkerPrefix = "__native_latency__:";
@@ -164,6 +166,7 @@ try {
   );
   assertNoExistingSmokeExe();
   assertNoExistingSmokeAppData();
+  assertNoExistingSmokeAutostartRegistration();
   ownsSmokeData = true;
 
   const port = await reservePort();
@@ -226,12 +229,6 @@ try {
     const opacity = document.querySelector('#opacity-input');
     opacity.value = '80';
     opacity.dispatchEvent(new Event('input', { bubbles: true }));
-    const duration = document.querySelector('#duration-input');
-    duration.value = '3';
-    duration.dispatchEvent(new Event('input', { bubbles: true }));
-    const file = document.querySelector('#file-input');
-    file.checked = true;
-    file.dispatchEvent(new Event('change', { bubbles: true }));
     return true;
   })()`);
 
@@ -244,7 +241,11 @@ try {
 
   const success = await waitForCdp(
     () => stateSnapshot(),
-    (value) => value.state === "success" && value.message === expectedSuccess && !value.bubbleHidden,
+    (value) =>
+      value.state === "success" &&
+      value.sessionTitle === expectedSessionTitle &&
+      value.message === expectedSuccess &&
+      !value.bubbleHidden,
     5000,
     "final success bubble",
   );
@@ -260,6 +261,7 @@ try {
     animationObservations: success.animations,
     imageErrors: success.imageErrors,
     finalSuccessMessage: success.message,
+    finalSessionTitle: success.sessionTitle,
   };
   writeStateIntegrationArtifact();
 
@@ -270,7 +272,7 @@ try {
     document.getSelection()?.removeAllRanges();
     return true;
   })()`);
-  await waitForCdp(() => stateSnapshot(), (value) => value.bubbleHidden, 4500, "success bubble auto-hide");
+  await waitForCdp(() => stateSnapshot(), (value) => value.bubbleHidden, 16_500, "fixed 15-second success bubble auto-hide");
   await cdp.evaluate(`document.querySelector('#pet-drag-handle').dispatchEvent(
     new PointerEvent('pointerenter', { pointerType: 'mouse' })
   )`);
@@ -388,8 +390,7 @@ try {
     () => cdp.evaluate(`(() => ({
       scale: document.querySelector('#scale-input')?.value,
       opacity: document.querySelector('#opacity-input')?.value,
-      duration: document.querySelector('#duration-input')?.value,
-      showFilePath: document.querySelector('#file-input')?.checked,
+      fileInputAbsent: document.querySelector('#file-input') === null,
       alwaysOnTop: document.querySelector('#always-on-top-input')?.checked,
       effectiveReducedMotion: document.documentElement.dataset.reducedMotion === 'true',
       petSource: document.querySelector('#pet-image')?.src,
@@ -398,8 +399,7 @@ try {
     (settings) => (
       settings.scale === "125"
       && settings.opacity === "80"
-      && settings.duration === "3"
-      && settings.showFilePath === true
+      && settings.fileInputAbsent === true
       && settings.alwaysOnTop === false
       && settings.effectiveReducedMotion === false
       && settings.petSource?.toLowerCase().includes('.gif')
@@ -410,8 +410,7 @@ try {
   );
   assert(restoredSettings.scale === "125", "Rust Store did not restore scale=125");
   assert(restoredSettings.opacity === "80", "Rust Store did not restore opacity=80");
-  assert(restoredSettings.duration === "3", "Rust Store did not restore duration=3");
-  assert(restoredSettings.showFilePath === true, "Rust Store did not restore showFilePath=true");
+  assert(restoredSettings.fileInputAbsent === true, "retired file display control reappeared");
   assert(restoredSettings.alwaysOnTop === false, "Rust Store did not restore alwaysOnTop=false");
   assert(restoredSettings.effectiveReducedMotion === false, "reduced motion unexpectedly persisted as a manual preference");
   assert(restoredSettings.petSource.toLowerCase().includes(".gif"), "restart did not restore animated pet media");
@@ -463,6 +462,7 @@ try {
 
   assertTrackedApplicationsExited();
   await cleanWorkspaceProfilesSettled();
+  removeSmokeAutostartRegistration();
   await cleanSmokeAppDataSettled();
   ownsSmokeData = false;
   runSucceeded = true;
@@ -481,7 +481,7 @@ try {
       "visible=true persistence, and isolated cleanup",
   );
   console.log(
-    "PASS Rust-owned settings persistence, retired-key migration, and 9-key on-disk schema",
+    "PASS Rust-owned settings persistence, Windows autostart enable/disable, retired-key migration, and 9-key on-disk schema",
   );
   console.log(
     "PASS first-run onboarding: defer, settings reopen, re-detect, completion persistence, and restart",
@@ -530,7 +530,10 @@ try {
     if (controlledServer) await controlledServer.close();
     if (trackedProcessesStopped) {
       await cleanWorkspaceProfilesSettled();
-      if (ownsSmokeData) await cleanSmokeAppDataSettled();
+      if (ownsSmokeData) {
+        removeSmokeAutostartRegistration();
+        await cleanSmokeAppDataSettled();
+      }
     } else {
       cleanupSafe = false;
       console.error("WARN skipped profile/AppData cleanup because a tracked process may still be running");
@@ -653,36 +656,64 @@ async function verifyOnboardingIntegration(mockProcess) {
     "first-run onboarding dialog",
   );
   assert(
-    report.actions.initial.prompt.includes("npx -y furry-companion-mcp") &&
-      report.actions.initial.prompt.includes("furry_companion.set_state"),
-    "onboarding omitted the direct Agent connection prompt",
+    report.actions.initial.prompt.includes("方法 1：发送指令给代理") &&
+      report.actions.initial.prompt.includes("方法 2：手动配置 MCP") &&
+      report.actions.initial.prompt.includes("codex mcp add furry_companion -- npx -y furry-companion-mcp") &&
+      report.actions.initial.prompt.includes("MCP tools 中是否出现 set_state"),
+    "onboarding omitted one of the requested MCP setup methods",
   );
   assert(
-    report.actions.initial.prompt.includes("thinking") &&
-      report.actions.initial.prompt.includes("planning") &&
-      report.actions.initial.prompt.includes("coding") &&
-      report.actions.initial.prompt.includes("testing") &&
-      report.actions.initial.prompt.includes("success") &&
-      report.actions.initial.prompt.includes("不要发送私密路径"),
-    "onboarding Agent prompt omitted the state or privacy contract",
+    report.actions.initial.prompt.includes("node -v && npm -v") &&
+      report.actions.initial.prompt.includes("npm cache verify") &&
+      report.actions.initial.prompt.includes("当前代理会话通常无法热加载新添加的 MCP 工具"),
+    "onboarding omitted the requested troubleshooting or restart guidance",
   );
   await cdp.evaluate(`(() => {
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,
-      value: { writeText: async (text) => { window.__nativeSmokeCopiedPrompt = text; } },
+      value: { writeText: async (text) => {
+        window.__nativeSmokeCopiedPrompt = text;
+        window.__nativeSmokeClipboardHistory = [...(window.__nativeSmokeClipboardHistory ?? []), text];
+      } },
     });
     document.querySelector('#copy-agent-prompt')?.click();
     return true;
   })()`);
   report.actions.copyPrompt = await waitForCdp(
     () => cdp.evaluate(`(() => ({
-      prompt: document.querySelector('#agent-connection-prompt')?.textContent ?? '',
       copied: window.__nativeSmokeCopiedPrompt ?? '',
       status: document.querySelector('#copy-agent-prompt-status')?.textContent ?? '',
     }))()`),
-    (snapshot) => snapshot.copied === snapshot.prompt && snapshot.status.includes("已复制"),
+    (snapshot) =>
+      snapshot.copied.includes('请为当前环境安装 Furry Companion MCP') &&
+      snapshot.copied.includes('codex mcp add furry_companion -- npx -y furry-companion-mcp') &&
+      snapshot.copied.includes('"mcpServers"') &&
+      snapshot.copied.includes('npm cache verify') &&
+      snapshot.status.includes("已复制完整指令"),
     2_000,
     "copyable Agent onboarding prompt",
+  );
+  await cdp.evaluate(`(() => {
+    for (const button of document.querySelectorAll('[data-copy-target]')) button.click();
+    return true;
+  })()`);
+  report.actions.copySnippets = await waitForCdp(
+    () => cdp.evaluate(`(() => {
+      const targets = [...document.querySelectorAll('[data-copy-target]')].map((button) => {
+        const id = button.dataset.copyTarget;
+        return document.getElementById(id)?.textContent ?? '';
+      });
+      const history = window.__nativeSmokeClipboardHistory ?? [];
+      return {
+        targetCount: targets.length,
+        targets,
+        history,
+        allCopied: targets.every((target) => history.includes(target)),
+      };
+    })()`),
+    (snapshot) => snapshot.targetCount === 6 && snapshot.allCopied === true,
+    2_000,
+    "individually copyable onboarding snippets",
   );
   report.actions.initial.storeVersion = await waitForOnboardingStoreVersion(
     0,
@@ -848,11 +879,11 @@ function assertBundledAnimationObservations(animations, imageErrors) {
   assert(Array.isArray(animations), "native state observations omitted pet animations");
   const expectedSources = {
     idle: "idle.gif",
-    thinking: "idle.gif",
-    planning: "idle.gif",
+    thinking: "coding.gif",
+    planning: "planning-1.gif",
     coding: "coding.gif",
-    testing: "coding.gif",
-    error: "exhausted.gif",
+    testing: "exhausted.gif",
+    error: "error-1.gif",
     success: "idle.gif",
   };
   for (const [state, fileName] of Object.entries(expectedSources)) {
@@ -959,14 +990,52 @@ async function verifyWindowsDesktopIntegration(child) {
   const petHoverPoint = await cdp.evaluate(`(() => {
     const rect = document.querySelector('#pet-drag-handle')?.getBoundingClientRect();
     if (!rect) throw new Error('pet hover target is unavailable');
-    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    return {
+      x: rect.left + rect.width / 2,
+      y: rect.top + rect.height / 2,
+      left: rect.left,
+      right: rect.right,
+      top: rect.top,
+      bottom: rect.bottom,
+      devicePixelRatio: window.devicePixelRatio,
+    };
   })()`);
-  await cdp.send("Input.dispatchMouseEvent", {
-    type: "mouseMoved",
-    x: petHoverPoint.x,
-    y: petHoverPoint.y,
-  });
-  await waitForCdp(
+  const originalCursor = initial.cursor;
+  assert(
+    Number.isSafeInteger(originalCursor?.x) && Number.isSafeInteger(originalCursor?.y),
+    "native probe did not capture the original cursor position",
+  );
+  let css;
+  try {
+    const hoverScreenPoint = {
+      x: Math.round(initial.clientOrigin.x + petHoverPoint.x * petHoverPoint.devicePixelRatio),
+      y: Math.round(initial.clientOrigin.y + petHoverPoint.y * petHoverPoint.devicePixelRatio),
+    };
+    const hoverMove = runTrackedWindowAction(child, "move", { point: hoverScreenPoint });
+    const hoverScreenRect = {
+      left: initial.clientOrigin.x + petHoverPoint.left * petHoverPoint.devicePixelRatio,
+      right: initial.clientOrigin.x + petHoverPoint.right * petHoverPoint.devicePixelRatio,
+      top: initial.clientOrigin.y + petHoverPoint.top * petHoverPoint.devicePixelRatio,
+      bottom: initial.clientOrigin.y + petHoverPoint.bottom * petHoverPoint.devicePixelRatio,
+    };
+    assert(
+      Number.isSafeInteger(hoverMove.cursor?.x) &&
+        Number.isSafeInteger(hoverMove.cursor?.y) &&
+        hoverMove.cursor.x >= hoverScreenRect.left &&
+        hoverMove.cursor.x < hoverScreenRect.right &&
+        hoverMove.cursor.y >= hoverScreenRect.top &&
+        hoverMove.cursor.y < hoverScreenRect.bottom,
+      `Win32 helper left the cursor outside the pet hit target: ${JSON.stringify({
+        cursor: hoverMove.cursor,
+        hitTarget: hoverScreenRect,
+      })}`,
+    );
+    await cdp.send("Input.dispatchMouseEvent", {
+      type: "mouseMoved",
+      x: petHoverPoint.x,
+      y: petHoverPoint.y,
+    });
+    await waitForCdp(
     () => cdp.evaluate(`(() => {
       const toggle = document.querySelector('#settings-toggle');
       if (!toggle) return null;
@@ -977,7 +1046,7 @@ async function verifyWindowsDesktopIntegration(child) {
     2_000,
     "settings toggle visibility after pet hover",
   );
-  const css = await cdp.evaluate(`(() => {
+    css = await cdp.evaluate(`(() => {
     const transparent = (element) => getComputedStyle(element).backgroundColor === 'rgba(0, 0, 0, 0)';
     const app = document.querySelector('#app');
     const dragHandle = document.querySelector('#pet-drag-handle');
@@ -1049,26 +1118,49 @@ async function verifyWindowsDesktopIntegration(child) {
       },
     };
   })()`);
-  assert(css.htmlTransparent && css.bodyTransparent && css.appTransparent, "HTML/body/app CSS is not transparent");
-  assert(
+    assert(css.htmlTransparent && css.bodyTransparent && css.appTransparent, "HTML/body/app CSS is not transparent");
+    assert(
     css.interaction.action === "hovering" &&
       css.interaction.fallbackAction === "hovering" &&
       css.interaction.animationName === "hovering-bob",
     `hovering interaction did not render before drag: ${JSON.stringify(css.interaction)}`,
   );
-  assert(
+    assert(
     css.settingsToggle.insideStateChip &&
       css.settingsToggle.opacity === "1" &&
       css.settingsToggle.visibility === "visible" &&
       css.settingsToggle.width >= 20,
     `settings toggle did not appear beside the state text while hovering: ${JSON.stringify(css.settingsToggle)}`,
   );
-  await cdp.send("Input.dispatchMouseEvent", {
-    type: "mouseMoved",
-    x: -20,
-    y: -20,
-  });
-  await waitForCdp(
+    const screenLeft = Math.round(css.screen.availLeft * css.devicePixelRatio);
+    const screenRight = Math.round(
+    (css.screen.availLeft + css.screen.availWidth) * css.devicePixelRatio,
+  );
+    const outsideX = initial.bounds.left - 24 >= screenLeft
+    ? initial.bounds.left - 24
+    : Math.min(screenRight - 1, initial.bounds.right + 24);
+    const outsideY = Math.max(
+    Math.round(css.screen.availTop * css.devicePixelRatio),
+    Math.min(initial.bounds.top + 20, initial.bounds.bottom - 1),
+  );
+    const outsideMove = runTrackedWindowAction(child, "move", {
+      point: { x: outsideX, y: outsideY },
+    });
+    assert(
+      Number.isSafeInteger(outsideMove.cursor?.x) &&
+        Number.isSafeInteger(outsideMove.cursor?.y) &&
+        (outsideMove.cursor.x < initial.bounds.left ||
+          outsideMove.cursor.x >= initial.bounds.right ||
+          outsideMove.cursor.y < initial.bounds.top ||
+          outsideMove.cursor.y >= initial.bounds.bottom),
+      `Win32 helper left the cursor inside the pet window: ${JSON.stringify(outsideMove.cursor)}`,
+    );
+    await cdp.send("Input.dispatchMouseEvent", {
+      type: "mouseMoved",
+      x: -20,
+      y: -20,
+    });
+    await waitForCdp(
     () => cdp.evaluate(`(() => {
       const toggle = document.querySelector('#settings-toggle');
       if (!toggle) return null;
@@ -1079,6 +1171,9 @@ async function verifyWindowsDesktopIntegration(child) {
     2_000,
     "settings toggle hides after pet hover ends",
   );
+  } finally {
+    runTrackedWindowAction(child, "move", { point: originalCursor });
+  }
   assert(
     Number.isFinite(css.devicePixelRatio) && css.devicePixelRatio > 0,
     "WebView returned an invalid devicePixelRatio",
@@ -1289,11 +1384,11 @@ async function verifyReducedMotionRendering() {
       },
       (value) => value.systemRequested &&
         value.effectiveReducedMotion &&
-        value.source.endsWith("/pets/fallback-idle.svg") &&
-        value.alt.includes("已减少动态效果") &&
+        value.source.toLowerCase().endsWith("/pets/furry-ai-state/animations/idle-static.png") &&
+        !value.alt.includes("备用静态图标") &&
         value.animationName === "none",
       2_000,
-      "reduced-motion static pet fallback",
+      "package-provided reduced-motion static pet",
     );
   } catch (error) {
     throw new Error(`${error.message}; last snapshot=${JSON.stringify(lastReducedSnapshot)}`);
@@ -1524,6 +1619,52 @@ async function verifyWindowsTrayIntegration(child, mockProcess) {
   report.actions.restorePosition.expectedCenter = expectedCenter;
   report.actions.restorePosition.after = restored;
 
+  const workAreaRight = Math.round(
+    (screen.availLeft + screen.availWidth) * scale,
+  );
+  const panelPhysicalWidth = Math.round(328 * scale);
+  const edgeDragStart = {
+    x: Math.round(
+      restored.clientOrigin.x +
+        (desktopIntegration.css.dragHandle.left + desktopIntegration.css.dragHandle.width / 2) *
+          scale,
+    ),
+    y: Math.round(
+      restored.clientOrigin.y +
+        (desktopIntegration.css.dragHandle.top + desktopIntegration.css.dragHandle.height / 2) *
+          scale,
+    ),
+  };
+  const edgeRequestedDelta = Math.max(
+    0,
+    workAreaRight - restored.bounds.right - Math.max(24, Math.round(32 * scale)),
+  );
+  assert(
+    edgeRequestedDelta > 0,
+    "centered pet had no usable path to the right work-area edge",
+  );
+  const rightEdgePet = runTrackedWindowAction(child, "drag", {
+    drag: {
+      startX: edgeDragStart.x,
+      startY: edgeDragStart.y,
+      endX: edgeDragStart.x + edgeRequestedDelta,
+      endY: edgeDragStart.y,
+    },
+  });
+  const rightEdgeGap = workAreaRight - rightEdgePet.bounds.right;
+  assert(
+    rightEdgeGap >= 0 && rightEdgeGap < panelPhysicalWidth,
+    `pet did not reach the right-edge placement precondition: gap=${rightEdgeGap}`,
+  );
+  report.actions.rightEdgePanelPrecondition = {
+    requestedDelta: edgeRequestedDelta,
+    observedDelta: rightEdgePet.bounds.left - restored.bounds.left,
+    workAreaRight,
+    panelPhysicalWidth,
+    rightEdgeGap,
+    window: rightEdgePet,
+  };
+
   const settingsInitiallyHidden = await cdp.evaluate(
     "document.querySelector('#settings-panel')?.hidden === true",
   );
@@ -1539,6 +1680,8 @@ async function verifyWindowsTrayIntegration(child, mockProcess) {
     () => cdp.evaluate(`(() => ({
       hidden: document.querySelector('#settings-panel')?.hidden,
       focused: document.hasFocus(),
+      innerWidth: window.innerWidth,
+      innerHeight: window.innerHeight,
       devicePixelRatio: window.devicePixelRatio,
       screen: {
         availLeft: window.screen.availLeft,
@@ -1570,6 +1713,7 @@ async function verifyWindowsTrayIntegration(child, mockProcess) {
         const rect = document.querySelector('#settings-panel')?.getBoundingClientRect();
         return rect ? { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom } : null;
       })(),
+      panelPlacement: document.querySelector('#app')?.dataset.sidePanelPlacement ?? '',
       closeRect: (() => {
         const rect = document.querySelector('#settings-close')?.getBoundingClientRect();
         return rect ? { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom } : null;
@@ -1583,10 +1727,25 @@ async function verifyWindowsTrayIntegration(child, mockProcess) {
         '#ipc-enabled-input',
         '#ipc-address-input',
         '#center-window-button',
+        '#duration-input',
+        '#duration-output',
       ].every((selector) => document.querySelector(selector) === null),
       settingsToggleInsideStateChip: document.querySelector('.state-chip')?.contains(
         document.querySelector('#settings-toggle'),
       ) === true,
+      launchAtStartupControlPresent: document.querySelector('#launch-at-startup-input') !== null,
+      actionPreviewPresent: Boolean(
+        document.querySelector('#action-preview-image') &&
+        document.querySelectorAll('#state-animation-grid .state-action-item').length === 7 &&
+        document.querySelectorAll('#state-animation-grid .state-action-card').length === 7
+      ),
+      stateRowsFillWidth: (() => {
+        const grid = document.querySelector('#state-animation-grid');
+        const rows = [...document.querySelectorAll('#state-animation-grid .state-action-item')];
+        if (!grid || rows.length !== 7) return false;
+        const gridWidth = grid.getBoundingClientRect().width;
+        return rows.every((row) => Math.abs(row.getBoundingClientRect().width - gridWidth) < 1);
+      })(),
     }))()`),
     (value) => value.hidden === false && value.focused === true && value.dragHandle && value.petRect && value.panelRect && value.closeRect && value.form,
     5_000,
@@ -1602,10 +1761,29 @@ async function verifyWindowsTrayIntegration(child, mockProcess) {
     settingsState.dragHandle.centerInsideButton === false,
     "settings drag handle center is covered by an interactive button",
   );
+  const panelIsLeft = settingsState.panelRect.right <= settingsState.petRect.left;
+  const panelIsRight = settingsState.petRect.right <= settingsState.panelRect.left;
+  assert(panelIsLeft || panelIsRight, "settings panel overlaps the pet instead of opening beside it");
   assert(
-    settingsState.petRect.right <= settingsState.panelRect.left,
-    "settings panel overlaps the pet instead of opening beside it",
+    Math.min(settingsState.petRect.left, settingsState.panelRect.left) >= 0 &&
+      Math.max(settingsState.petRect.right, settingsState.panelRect.right) <= settingsState.innerWidth,
+    "settings panel expansion clipped the pet or panel inside the native window",
   );
+  assert(
+    (panelIsLeft && settingsState.panelPlacement === "left") ||
+      (panelIsRight && settingsState.panelPlacement === "right"),
+    `settings panel DOM placement ${settingsState.panelPlacement} disagrees with its geometry`,
+  );
+  assert(
+    settingsState.panelPlacement === "left" && panelIsLeft,
+    "settings panel did not switch to the left for a pet parked at the right work-area edge",
+  );
+  assert(
+    settingsState.launchAtStartupControlPresent,
+    "Windows launch-at-startup control is missing from settings",
+  );
+  assert(settingsState.actionPreviewPresent, "action selection preview is missing from settings");
+  assert(settingsState.stateRowsFillWidth, "state action cards do not each fill a complete row");
   assert(settingsState.retiredControlsAbsent, "retired settings controls are still present in the DOM");
   assert(
     settingsState.settingsToggleInsideStateChip,
@@ -1615,7 +1793,141 @@ async function verifyWindowsTrayIntegration(child, mockProcess) {
     settingsState.form.scrollHeight > settingsState.form.clientHeight,
     "settings form is not scrollable, so the fixed close-button behavior cannot be exercised",
   );
-  const closeBeforeScroll = settingsState.closeRect;
+  await cdp.evaluate(`(() => {
+    const stateCard = document.querySelector('.state-action-card[data-state="coding"]');
+    stateCard.click();
+    return true;
+  })()`);
+  const overridePreview = await waitForCdp(
+    () => cdp.evaluate(`(() => {
+      const item = document.querySelector('.state-action-item[data-state="coding"]');
+      const stateCard = item?.querySelector('.state-action-card');
+      const choiceGrid = item?.querySelector('.animation-choice-grid');
+      const candidate = choiceGrid?.querySelector(
+        '.animation-choice-card[data-animation-override="coding-2"]'
+      );
+      const poster = candidate?.querySelector('.action-preview-placeholder');
+      const image = document.querySelector('#action-preview-image');
+      return {
+        expanded: item?.dataset.expanded,
+        ariaExpanded: stateCard?.getAttribute('aria-expanded'),
+        choiceHidden: choiceGrid?.hidden,
+        candidateCount: choiceGrid?.querySelectorAll('.animation-choice-card').length,
+        selected: choiceGrid?.querySelector('.animation-choice-card[aria-pressed="true"]')?.dataset.animationOverride,
+        liveSource: image?.getAttribute('src'),
+        posterSource: poster?.getAttribute('src'),
+        posterComplete: poster?.complete,
+        posterNaturalWidth: poster?.naturalWidth,
+        candidateFocused: document.activeElement === candidate,
+        crossStateCandidateAbsent: choiceGrid?.querySelector(
+          '.animation-choice-card[data-animation-override="error-2"]'
+        ) === null,
+      };
+    })()`),
+    (value) =>
+      value.expanded === "true" &&
+      value.ariaExpanded === "true" &&
+      value.choiceHidden === false &&
+      value.candidateCount === 3 &&
+      value.liveSource?.toLowerCase().includes("coding.gif") &&
+      value.posterSource?.startsWith("data:image/png") &&
+      value.posterComplete === true &&
+      value.posterNaturalWidth > 0 &&
+      value.candidateFocused === false &&
+      value.crossStateCandidateAbsent === true,
+    3_000,
+    "inline candidate action previews without hover or focus",
+  );
+  await cdp.evaluate(`(() => {
+    document.querySelector(
+      '.animation-choice-card[data-animation-override="coding-2"]'
+    ).click();
+    return true;
+  })()`);
+  const selectedPreview = await waitForCdp(
+    () => cdp.evaluate(`(() => {
+      const card = document.querySelector('.state-action-card[data-state="coding"]');
+      const item = card?.closest('.state-action-item');
+      const image = document.querySelector('#action-preview-image');
+      return {
+        expanded: item?.dataset.expanded,
+        animation: card?.dataset.animation,
+        selected: item?.querySelector('.animation-choice-card[aria-pressed="true"]')?.dataset.animationOverride,
+        source: image?.getAttribute('src'),
+      };
+    })()`),
+    (value) =>
+      value.expanded === "true" &&
+      value.animation === "coding-2" &&
+      value.selected === "coding-2" &&
+      value.source?.toLowerCase().includes("coding-2.gif"),
+    3_000,
+    "selected state action card preview",
+  );
+  await cdp.evaluate(`(() => {
+    document.querySelector('.animation-choice-card[data-animation-override=""]').click();
+    return true;
+  })()`);
+  const defaultPreview = await waitForCdp(
+    () => cdp.evaluate(`(() => ({
+      animation: document.querySelector('.state-action-card[data-state="coding"]')?.dataset.animation,
+      expanded: document.querySelector('.state-action-item[data-state="coding"]')?.dataset.expanded,
+      selected: document.querySelector('.state-action-item[data-state="coding"] .animation-choice-card[aria-pressed="true"]')?.dataset.animationOverride,
+      source: document.querySelector('#action-preview-image')?.getAttribute('src'),
+    }))()`),
+    (value) =>
+      value.animation === "coding-1" &&
+      value.expanded === "true" &&
+      value.selected === "" &&
+      value.source?.toLowerCase().includes("coding.gif"),
+    3_000,
+    "default action preview restoration",
+  );
+  report.actions.settings.actionPreview = {
+    candidate: overridePreview,
+    selected: selectedPreview,
+    restoredDefault: defaultPreview,
+  };
+  const protectedClickState = await cdp.evaluate(`(() => {
+    document.querySelector('#settings-form').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    document.querySelector('#pet-drag-handle').dispatchEvent(
+      new MouseEvent('click', { bubbles: true, detail: 0 })
+    );
+    return document.querySelector('#settings-panel')?.hidden;
+  })()`);
+  assert(protectedClickState === false, "pet or settings content click closed the settings panel");
+  await cdp.evaluate(`document.querySelector('.pet-column').dispatchEvent(
+    new MouseEvent('click', { bubbles: true })
+  )`);
+  await waitForCdp(
+    () => cdp.evaluate("document.querySelector('#settings-panel')?.hidden"),
+    Boolean,
+    2_000,
+    "pet surroundings click closes settings",
+  );
+  await cdp.evaluate("document.querySelector('#settings-toggle').click()" );
+  await waitForCdp(
+    () => cdp.evaluate(`(() => ({
+      hidden: document.querySelector('#settings-panel')?.hidden,
+      innerWidth: window.innerWidth,
+      panelWidth: document.querySelector('#settings-panel')?.getBoundingClientRect().width,
+    }))()`),
+    (value) =>
+      value.hidden === false &&
+      Math.abs(value.innerWidth - settingsState.innerWidth) < 1 &&
+      value.panelWidth > 0,
+    5_000,
+    "settings reopen after surroundings dismissal",
+  );
+  report.actions.settings.surroundingsDismiss = {
+    protectedClicksKeptOpen: protectedClickState === false,
+    blankPetColumnClosed: true,
+    reopened: true,
+  };
+  const closeBeforeScroll = await cdp.evaluate(`(() => {
+    const rect = document.querySelector('#settings-close').getBoundingClientRect();
+    return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom };
+  })()`);
   const closeAfterScroll = await cdp.evaluate(`(() => {
     const form = document.querySelector('#settings-form');
     const close = document.querySelector('#settings-close');
@@ -1638,7 +1950,58 @@ async function verifyWindowsTrayIntegration(child, mockProcess) {
     "settings close button moved when the settings content scrolled",
   );
   report.actions.settings.fixedCloseButton = { before: closeBeforeScroll, after: closeAfterScroll };
+
+  await cdp.evaluate(`(() => {
+    const input = document.querySelector('#launch-at-startup-input');
+    input.checked = true;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    return true;
+  })()`);
+  const enabledAutostart = await waitFor(
+    () => {
+      const value = querySmokeAutostartRegistration();
+      return value?.toLowerCase().includes(path.basename(exePath).toLowerCase()) ? value : false;
+    },
+    5_000,
+    "Windows autostart registration enable",
+  );
+  await cdp.evaluate(`(() => {
+    const input = document.querySelector('#launch-at-startup-input');
+    input.checked = false;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    return true;
+  })()`);
+  await waitFor(
+    () => querySmokeAutostartRegistration() === undefined,
+    5_000,
+    "Windows autostart registration disable",
+  );
+  report.actions.settings.autostart = {
+    valueName: smokeAutostartValueName,
+    enabledValue: enabledAutostart,
+    disabledValue: querySmokeAutostartRegistration(),
+  };
+
   const beforeSettingsDrag = queryTrackedWindow(child);
+  const workArea = {
+    left: Math.round(settingsState.screen.availLeft * settingsState.devicePixelRatio),
+    top: Math.round(settingsState.screen.availTop * settingsState.devicePixelRatio),
+    right: Math.round(
+      (settingsState.screen.availLeft + settingsState.screen.availWidth) *
+        settingsState.devicePixelRatio,
+    ),
+    bottom: Math.round(
+      (settingsState.screen.availTop + settingsState.screen.availHeight) *
+        settingsState.devicePixelRatio,
+    ),
+  };
+  assert(
+    beforeSettingsDrag.bounds.left >= workArea.left &&
+      beforeSettingsDrag.bounds.top >= workArea.top &&
+      beforeSettingsDrag.bounds.right <= workArea.right &&
+      beforeSettingsDrag.bounds.bottom <= workArea.bottom,
+    "settings window extends outside the current monitor work area",
+  );
   const settingsAvailableRight =
     (settingsState.screen.availLeft + settingsState.screen.availWidth) *
       settingsState.devicePixelRatio -
@@ -1701,6 +2064,22 @@ async function verifyWindowsTrayIntegration(child, mockProcess) {
     2_000,
     "settings panel close after tray test",
   );
+  const closedAfterSettings = await waitFor(
+    () => {
+      const snapshot = queryTrackedWindow(child);
+      return snapshot.count === 1 && snapshot.bounds.width < beforeSettingsDrag.bounds.width
+        ? snapshot
+        : false;
+    },
+    3_000,
+    "settings window shrinks after the left panel closes",
+    50,
+  );
+  assert(
+    Math.abs(closedAfterSettings.bounds.right - afterSettingsDrag.bounds.right) <= 3,
+    "closing the left settings panel moved the pet beyond the settings-window drag",
+  );
+  report.actions.settings.closed = closedAfterSettings;
 
   report.actions.topmostEnable = runTrayAction(child, "menu-click", { menuItem: "总在最前" });
   const enabled = await waitFor(
@@ -1904,7 +2283,7 @@ function runTrackedWindowAction(child, action, options = {}) {
   assertChildRunning(child, `cannot ${action} a stopped application`);
   assert(Number.isSafeInteger(child.pid) && child.pid > 0, `invalid tracked PID: ${child.pid}`);
   assert(
-    ["query", "close", "topmost", "pixels", "drag"].includes(action),
+    ["query", "close", "topmost", "pixels", "drag", "move"].includes(action),
     `unsupported tracked window action: ${action}`,
   );
   if (options.otherHandle !== undefined) {
@@ -1920,6 +2299,10 @@ function runTrackedWindowAction(child, action, options = {}) {
     for (const key of ["startX", "startY", "endX", "endY"]) {
       assert(Number.isSafeInteger(options.drag?.[key]), `drag action requires integer ${key}`);
     }
+  }
+  if (action === "move") {
+    assert(Number.isSafeInteger(options.point?.x), "move action requires integer x");
+    assert(Number.isSafeInteger(options.point?.y), "move action requires integer y");
   }
   const result = spawnSync(
     "powershell.exe",
@@ -1950,6 +2333,8 @@ function runTrackedWindowAction(child, action, options = {}) {
         NATIVE_SMOKE_DRAG_START_Y: action === "drag" ? String(options.drag.startY) : "0",
         NATIVE_SMOKE_DRAG_END_X: action === "drag" ? String(options.drag.endX) : "0",
         NATIVE_SMOKE_DRAG_END_Y: action === "drag" ? String(options.drag.endY) : "0",
+        NATIVE_SMOKE_MOVE_X: action === "move" ? String(options.point.x) : "0",
+        NATIVE_SMOKE_MOVE_Y: action === "move" ? String(options.point.y) : "0",
       },
     },
   );
@@ -2014,6 +2399,7 @@ function stateSnapshot() {
       bubbleHidden: bubble.hidden,
       role: bubble.getAttribute('role'),
       message: document.querySelector('#bubble-message').textContent,
+      sessionTitle: document.querySelector('#bubble-session-title').textContent,
       closeLabel: document.querySelector('#bubble-close').getAttribute('aria-label') ?? ''
     };
   })()`);
@@ -2111,9 +2497,6 @@ async function runLatencyCycle(socket, collector, cycleId, samples) {
 
 async function runNativeBurstPhase(socket, collector) {
   await cdp.evaluate(`(() => {
-    const file = document.querySelector('#file-input');
-    file.checked = true;
-    file.dispatchEvent(new Event('change', { bubbles: true }));
     window.__nativeSmokeMetrics.burstMutations = 0;
     return true;
   })()`);
@@ -2137,8 +2520,8 @@ async function runNativeBurstPhase(socket, collector) {
   const [leadingObservation, finalObservation] = await Promise.all([leading, final]);
   assert(leadingObservation.state === "coding", "burst leading event did not render coding");
   assert(
-    leadingObservation.fileText === "src/burst-leading.ts" && !leadingObservation.fileHidden,
-    "burst leading event did not render its complete file field",
+    leadingObservation.fileText === "" && leadingObservation.fileHidden,
+    "burst leading event exposed the retired file-path field",
   );
   assert(finalObservation.state === "coding", "burst final event did not render coding");
   assert(
@@ -2334,7 +2717,13 @@ async function waitForCdpTarget(port, timeoutMs) {
     const response = await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(750) });
     if (!response.ok) return false;
     const targets = await response.json();
-    return targets.find((target) => target.type === "page" && target.webSocketDebuggerUrl) ?? false;
+    return targets.find(
+      (target) =>
+        target.type === "page" &&
+        target.webSocketDebuggerUrl &&
+        typeof target.url === "string" &&
+        target.url !== "about:blank",
+    ) ?? false;
   }, timeoutMs, "WebView2 CDP target", 100);
 }
 
@@ -2694,23 +3083,71 @@ function assertNoExistingSmokeAppData() {
   }
 }
 
+function assertNoExistingSmokeAutostartRegistration() {
+  assert(
+    smokeAutostartValueName === "furry-agent-pet Smoke",
+    `Refusing to manage unexpected autostart value name: ${smokeAutostartValueName}`,
+  );
+  const existing = querySmokeAutostartRegistration();
+  if (existing !== undefined) {
+    fail(`Pre-existing smoke autostart registration requires manual review: ${existing}`);
+  }
+}
+
+function querySmokeAutostartRegistration() {
+  const key = String.raw`HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Run`;
+  const result = spawnSync("reg.exe", ["query", key, "/v", smokeAutostartValueName], {
+    encoding: "utf8",
+    windowsHide: true,
+  });
+  if (result.status === 1) return undefined;
+  assert(result.status === 0, `Could not query smoke autostart registration: ${result.stderr}`);
+  const line = result.stdout
+    .split(/\r?\n/)
+    .find((candidate) => candidate.trimStart().startsWith(smokeAutostartValueName));
+  assert(line, "Smoke autostart registry value was reported without readable data");
+  return line.trim().split(/\s{2,}/).at(-1);
+}
+
+function removeSmokeAutostartRegistration() {
+  assert(
+    smokeAutostartValueName === "furry-agent-pet Smoke",
+    `Refusing to remove unexpected autostart value name: ${smokeAutostartValueName}`,
+  );
+  for (const key of [
+    String.raw`HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Run`,
+    String.raw`HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run`,
+  ]) {
+    const result = spawnSync("reg.exe", ["delete", key, "/v", smokeAutostartValueName, "/f"], {
+      encoding: "utf8",
+      windowsHide: true,
+    });
+    assert(
+      result.status === 0 || result.status === 1,
+      `Could not clean smoke autostart value from ${key}: ${result.stderr}`,
+    );
+  }
+}
+
 function assertPersistedApplicationSettings() {
   const settings = readPersistedApplicationSettings();
   assert(settings && typeof settings === "object", "Rust Store settings object is missing");
   assert(settings.scale === 1.25, `Persisted scale was ${settings.scale}, expected 1.25`);
   assert(settings.opacity === 0.8, `Persisted opacity was ${settings.opacity}, expected 0.8`);
-  assert(
-    settings.successBubbleDurationMs === 3_000,
-    `Persisted successBubbleDurationMs was ${settings.successBubbleDurationMs}, expected 3000`,
-  );
-  assert(settings.showFilePath === true, "Persisted showFilePath was not true");
+  assert(settings.showFilePath === false, "Persisted showFilePath was not normalized to false");
   assert(settings.alwaysOnTop === false, "Persisted alwaysOnTop was not false");
+  assert(settings.launchAtStartup === false, "Persisted launchAtStartup was not false");
   assert(settings.onboardingVersion === 2, "Persisted onboardingVersion was not 2");
   assert(
     Object.keys(settings).length === 9,
     `Persisted settings schema has ${Object.keys(settings).length} keys, expected 9`,
   );
-  for (const retiredKey of ["reduceMotion", "ipcEnabled", "ipcAddress"]) {
+  for (const retiredKey of [
+    "reduceMotion",
+    "ipcEnabled",
+    "ipcAddress",
+    "successBubbleDurationMs",
+  ]) {
     assert(!(retiredKey in settings), `Retired settings key ${retiredKey} was persisted`);
   }
 }

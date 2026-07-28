@@ -7,10 +7,16 @@ describe("normalizeSettings", () => {
     expect(normalizeSettings(undefined)).toEqual(DEFAULT_SETTINGS);
   });
 
-  it("clamps scale, opacity and completion duration", () => {
-    expect(
-      normalizeSettings({ scale: 9, opacity: 0, successBubbleDurationMs: 90_000 }),
-    ).toMatchObject({ scale: 2, opacity: 0.3, successBubbleDurationMs: 60_000 });
+  it("normalizes the Windows startup preference as a boolean", () => {
+    expect(normalizeSettings({ launchAtStartup: true }).launchAtStartup).toBe(true);
+    expect(normalizeSettings({ launchAtStartup: "yes" }).launchAtStartup).toBe(false);
+  });
+
+  it("clamps scale and opacity", () => {
+    expect(normalizeSettings({ scale: 9, opacity: 0 })).toMatchObject({
+      scale: 2,
+      opacity: 0.3,
+    });
   });
 
   it("drops retired manual motion and IPC preferences", () => {
@@ -25,10 +31,14 @@ describe("normalizeSettings", () => {
     expect(normalized).not.toHaveProperty("ipcEnabled");
   });
 
-  it("rejects fractional completion durations", () => {
-    expect(normalizeSettings({ successBubbleDurationMs: 3_500.5 }).successBubbleDurationMs).toBe(
-      DEFAULT_SETTINGS.successBubbleDurationMs,
-    );
+  it("drops the retired completion bubble duration", () => {
+    const normalized = normalizeSettings({ successBubbleDurationMs: 3_000 });
+
+    expect(normalized).not.toHaveProperty("successBubbleDurationMs");
+  });
+
+  it("keeps the retired file-path display disabled", () => {
+    expect(normalizeSettings({ showFilePath: true }).showFilePath).toBe(false);
   });
 
   it("keeps only known state animation overrides", () => {

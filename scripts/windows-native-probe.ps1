@@ -278,6 +278,21 @@ public static class NativeSmokeWindow
             SetCursorPos(original.X, original.Y);
         }
     }
+
+    public static POINT ReadCursorPosition()
+    {
+        POINT point;
+        if (!GetCursorPos(out point))
+        {
+            throw new InvalidOperationException("GetCursorPos failed.");
+        }
+        return point;
+    }
+
+    public static bool MoveCursorTo(int x, int y)
+    {
+        return SetCursorPos(x, y);
+    }
 }
 
 public static class NativeSmokeBackdrop
@@ -520,6 +535,12 @@ if ($action -eq "close") {
     if (-not [NativeSmokeWindow]::DragFromTo($startX, $startY, $endX, $endY)) {
         throw "SendInput-compatible mouse drag failed."
     }
+} elseif ($action -eq "move") {
+    $moveX = [int]::Parse($env:NATIVE_SMOKE_MOVE_X)
+    $moveY = [int]::Parse($env:NATIVE_SMOKE_MOVE_Y)
+    if (-not [NativeSmokeWindow]::MoveCursorTo($moveX, $moveY)) {
+        throw "SetCursorPos failed."
+    }
 } elseif ($action -ne "query" -and $action -ne "pixels") {
     throw "Unsupported native smoke action: $action"
 }
@@ -561,6 +582,7 @@ $zOrder = if ($otherHandle -eq [IntPtr]::Zero) {
 } else {
     [NativeSmokeWindow]::CompareZOrder($window, $otherHandle)
 }
+$cursor = [NativeSmokeWindow]::ReadCursorPosition()
 
 [pscustomobject]@{
     count = 1
@@ -593,4 +615,5 @@ $zOrder = if ($otherHandle -eq [IntPtr]::Zero) {
     targetAboveOther = if ($null -eq $zOrder) { $null } else { [bool]($zOrder -lt 0) }
     zOrderComparison = $zOrder
     pixels = $pixels
+    cursor = [pscustomobject]@{ x = $cursor.X; y = $cursor.Y }
 } | ConvertTo-Json -Compress -Depth 6

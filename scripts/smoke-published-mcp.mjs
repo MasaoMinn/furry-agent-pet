@@ -3,7 +3,6 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import net from "node:net";
-import os from "node:os";
 import path from "node:path";
 
 const TIMEOUT_MS = 8_000;
@@ -68,10 +67,7 @@ function waitForExit(child) {
 
 const runtimePath = parseRuntimePath(process.argv.slice(2));
 const suffix = `${process.pid}-${Date.now()}`;
-const ipcPath =
-  process.platform === "win32"
-    ? `\\\\.\\pipe\\furry-agent-pet-runtime-smoke-${suffix}`
-    : path.join(os.tmpdir(), `furry-agent-pet-runtime-smoke-${suffix}.sock`);
+const ipcPath = `\\\\.\\pipe\\furry-agent-pet-runtime-smoke-${suffix}`;
 
 const child = spawn(process.execPath, [runtimePath], {
   cwd: path.dirname(runtimePath),

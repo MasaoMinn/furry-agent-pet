@@ -1,16 +1,24 @@
 # Windows 冒烟测试报告
 
-最近测试日期：2026-07-22  
-应用版本：0.1.0  
-结论：**2026-07-22 Windows 隔离 Debug 当前源码已完整通过本轮设置与接入向导改版：设置页在桌宠右侧且不覆盖角色，内容滚动时关闭按钮固定，设置标题栏可真实拖动，未批准的 reduced-motion/MCP 开关、自定义 IPC 地址和恢复位置控件均不存在；接入向导提供可复制的 Agent 提示词。系统级 `prefers-reduced-motion` 自动降级仍作为无设置项的可访问性能力保留。七状态、四 GIF、气泡、桌面、托盘、延迟、burst 和 60 秒 sleeping 套件也继续通过。2026-07-16 的安装后 Release 仍是历史基线；本轮 Release 产物会单独记录，不冒充安装后验收。**
+最近测试日期：2026-07-28
+应用版本：0.2.0
+结论：**2026-07-28 Windows 隔离 Debug 已从当前源码完整重建并通过七状态预设资源替换、状态专属候选限制、包内静态 reduced-motion，以及既有窗口、托盘、开机自启、持久化、性能和 60 秒睡眠套件。2026-07-16 的安装后 Release 仍是历史基线，不代表本轮资源与候选限制功能。**
 
-该结论只适用于下述 Windows 11 x64 环境，不包含 macOS/Linux 实机、物理多屏与混合 DPI、Windows 10/ARM64、升级/降级、快捷方式生命周期、代码签名或正式发布验收。
+该结论只适用于下述 Windows 11 x64 环境，不包含物理多屏与混合 DPI、Windows 10/ARM64、升级/降级、快捷方式生命周期、代码签名或正式发布验收。
 
 ## 证据边界
 
+- **2026-07-28 v0.2.0 Release/NSIS 构建证据**：`npm run check` 通过 24/24 Vitest 文件、109/109 前端测试、57/57 Rust 测试、TypeScript、`cargo check`、`cargo fmt --check` 和 production build。`npm run tauri:build:windows -- --no-sign --ci` 生成 24,446,976-byte portable EXE（SHA-256 `6278CCF8F5FB4EC615FA8E83DFFCBECFB64887858650D94BEF0D4C0AE0B96350`）与 15,654,606-byte NSIS（SHA-256 `7B564985A5777C7499E4A94DDC28217AA9E24F49FD45A7C8E34EF7253B01B090`），两者均为 `NotSigned`。installer preflight 因检测到本机已有 v0.1.0 正式安装记录而失败关闭，没有触碰用户安装；因此这里只声明构建和静态产物校验通过，不声明 v0.2.0 安装/卸载生命周期通过。
+- **2026-07-28 七状态预设资源与状态专属选择权威基线**：`npm run check` 通过 19/19 Vitest 文件、94/94 前端测试、57/57 Rust 测试、TypeScript、`cargo check`、`cargo fmt --check` 和 production build。当前源码完整重建 run `.cache/native-windows-smoke/1785220817686-16956` 使用 30,294,016-byte Debug EXE，SHA-256 `0DB8A51193DC3E3CAC8E9835363647D6086B2F4AC83A2C92457A3DC25B759212`；`run-result.json` 为 `success=true`、`cleanupSafe=true`。真实 catalog 包含七状态 22 个逻辑预设和 13 份唯一媒体，整包为 13,036,029 bytes / 89,244,857 解码像素；coding 行恰有 3 个本状态候选，跨状态 `error-2` 不在 DOM，未 hover/聚焦的 `coding-2` 候选生成 132 px 宽 PNG 首帧，选择后实时播放 `coding-2.gif`，恢复后回到默认 `coding.gif`。系统 reduced-motion 把 `idle.gif` 替换为包内 `idle-static.png` 且无动画，恢复后回到 `idle.gif`。完整套件同时通过七状态、140 样本 p50 `1.47 ms` / p95 `10.44 ms` / max `13.04 ms`、1001 条事件到 2 次 DOM marker、`sleeping.gif` 于 `60,045.80 ms` 激活，以及真实窗口、拖拽、托盘、设置、开机自启、重启持久化与隔离清理。
+- **2026-07-28 整行与行内展开定向证据**：`npm run check` 通过 19/19 Vitest 文件、93/93 前端测试、56/56 Rust 测试、TypeScript、`cargo check`、`cargo fmt --check` 和 production build。当前源码完整重建 20,403,200-byte Debug EXE（SHA-256 `1B467A6F03CF59013ACBC18FCCD63CCAE0149A9C3AF3D0934C0CF2DA8FB71D76`）；`.cache/native-windows-smoke/1785211873195-29520/tray-integration.json` 记录七个状态项各自占满动作区宽度，coding 点击后在原行下展开 5 张候选卡。未 hover、未聚焦的 `exhausted.gif` 候选已生成完整 130 × 120 PNG 首帧，选中后唯一实时预览切换为 `exhausted.gif`，恢复默认后回到 `coding.gif` 且选择区保持展开。该 run 后续在 60 秒 idle 计时器调度探针超时；两次 `--skip-build` 复跑分别在托盘“重新连接”和“恢复默认位置”阶段发现外部鼠标移动，按安全策略中止。三次均 `cleanupSafe=true`，因此只把前述新 UI 行为列为定向通过，不声明新的全量成功基线。
+- **2026-07-28 状态/候选动作卡片与空白关闭权威基线**：当前源码完整重建后，以同一 20,402,688-byte Debug EXE（SHA-256 `DE24572A6D12E309B56D12F138E19C1F28FF5290B61ACCAADD25AE6C939B080A`）成功复跑 `.cache/native-windows-smoke/1785210990332-27432`；产品源码未在重建与 `--skip-build` 成功 run 之间变化，`success=true`、`cleanupSafe=true`。真实 WebView2 显示七张状态卡，coding 候选页有 5 张预览卡；`exhausted.gif` 在候选聚焦与选中后总览均完整加载，恢复默认后显示 `coding.gif`。设置内部和宠物点击保持面板打开，宠物周围空白点击关闭并可重新打开。完整套件同时通过七状态、140 样本 p50 `1.17 ms` / p95 `2.79 ms` / max `3.51 ms`、1001 条事件到 2 次 DOM marker、`sleeping.gif` 于 `60,055.18 ms` 激活、真实托盘、拖动、重启持久化和隔离清理。`npm run check` 通过 18/18 Vitest 文件、90/90 前端测试和 56/56 Rust 测试。
+- **2026-07-27 v0.1.1 定向证据**：`npm run check` 通过 17/17 Vitest 文件、84/84 前端测试、56/56 Rust 测试、TypeScript、`cargo check`、`cargo fmt --check` 与 Vite production build。Windows WebView2 原生流程实际通过固定 15 秒 success 气泡关闭及悬停回看、旧时长控件不存在、9 字段 Store，以及动作预览从 coding 默认动作切换到 `exhausted.gif` 后恢复 `coding.gif`；同一流程的后续完整托盘阶段两次检测到外部鼠标移动并按安全策略中止，因此本轮不声明新的全量原生成功 run。v0.1.1 NSIS 为 5,781,877 bytes、SHA-256 `0BCEB9BF192A4A95E53A665E3DA0C0C3823BA0166CFC97E7FD9F3925CA39BFB0`，Authenticode `NotSigned`，尚未执行 UAC 安装/卸载。
+- **2026-07-27 当前 Windows Debug 权威基线**：成功 run `.cache/native-windows-smoke/1785137435175-5396` 使用 20,404,224-byte EXE，SHA-256 `CBE158124FABDFDAB948E2BFBAC71CF670FE0F069E11FAD4D5157D7B440D720E`；`run-result.json` 为 `success=true`、`cleanupSafe=true`。该 EXE 由紧邻的完整源码重建生成，成功复跑使用 `--skip-build`；产品源码未在两者之间变化。140 个状态样本 p50 `1.54 ms`、p95 `5.58 ms`、max `6.17 ms`，1001 条 burst 收敛为 2 次 DOM marker 更新，`sleeping.gif` 在 `60,057.38 ms` 激活。
+- **2026-07-27 右侧边缘/开机自启/会话标题证据**：原生鼠标把桌宠拖到工作区右缘 48 px 后，从托盘打开设置得到 `panelPlacement=left`；面板区域 `[0,320]`、桌宠区域 `[328,760]` 均完整位于 760 px WebView 内，原生窗口完整位于当前工作区。设置标题栏请求/实际位移均为 `(-72,48)`，关闭左侧面板后窗口由 `1140 × 762` 收回为 `648 × 762`，保持拖动后的桌宠右缘锚点。隔离注册表值 `furry-agent-pet Smoke` 被真实启用到当前 EXE 后再禁用且无残留；Store 为 10 字段 schema。最终 success 气泡显示会话标题“IPC 演示会话”。
+- **2026-07-27 当前质量检查**：`npm run check` 通过 17/17 Vitest 文件、84/84 前端测试、57/57 Rust 测试，同时通过 TypeScript、`cargo check`、`cargo fmt --check` 与 Vite production build。Windows 原生套件还通过七状态、错误确认、success 详情回放、透明合成、置顶 Z-order、真实桌宠/设置拖拽、托盘六项操作、隐藏重启、单实例唤醒和隔离清理。
 - **2026-07-22 状态栏设置入口定向证据**：当前源码完整重建 run `.cache/native-windows-smoke/1784702542343-32532` 通过真实 WebView 鼠标移动验证：设置按钮位于 `.state-chip` 内，悬停桌宠时 `opacity=1`、`visibility=visible`、可见宽度 `21.04 px`，移出后恢复隐藏；同一 run 还验证系统 reduced-motion 下 `success` 静态后备的 `animationName=none`。桌面、拖拽、点击与合成证据已写入 `desktop-integration.json`。该 run 随后因 Windows 任务栏 UI Automation 未能为 PID 绑定图标恢复唯一身份而停止，`success=false`、`cleanupSafe=true`；这不替代下方完整成功基线，也不把未运行的后续阶段标记为通过。
 - **2026-07-22 当前设置/向导权威 Debug 基线**：完整重建 run `.cache/native-windows-smoke/1784700645750-31408` 使用 20,262,400-byte Debug EXE，SHA-256 `32E0E77C241427B61398338C1F50929449EF66EC776F628B36B5F8452D47D548`；`run-result.json` 为 `success=true`、`cleanupSafe=true`。设置原生证据记录桌宠区域 `[0,432]`、设置区域 `[432,752]`，两者边界相接而不重叠；设置内容从 `scrollTop=0` 滚到 `119.33` 后关闭按钮四边坐标完全不变；四个退役控件均不在 DOM。向导证据确认焦点落在复制按钮、复制文本与可见提示词逐字相同、完成后 Store 版本为 2。140 个状态延迟样本 p50 `1.28 ms`、p95 `5.33 ms`、max `6.79 ms`，1001 条 burst 收敛为 2 次 DOM marker 更新，`sleeping.gif` 在 `60,054.87 ms` 激活。
-- **2026-07-22 当前质量检查**：实际执行 `npm run check`，15/15 Vitest 文件、75/75 前端测试与 57/57 Rust 测试通过，同时通过 TypeScript、`cargo check`、`cargo fmt --check` 和 Vite production build。Store 当前 schema 为 9 个字段，迁移会丢弃旧 `reduceMotion`、`ipcEnabled`、`ipcAddress` 键。
+- **2026-07-22 当时质量检查**：实际执行 `npm run check`，15/15 Vitest 文件、75/75 前端测试与 57/57 Rust 测试通过，同时通过 TypeScript、`cargo check`、`cargo fmt --check` 和 Vite production build。当时 Store schema 为 9 个字段；当前 schema 见 2026-07-27 基线。
 - **2026-07-22 设置标题栏拖拽定向证据**：当前源码完整重建 run `.cache/native-windows-smoke/1784698822731-25624` 通过真实托盘打开设置和原生鼠标拖拽，标题栏请求/实际位移均为 `(72,48)`，窗口保持 `648 × 762`、面板保持打开且关闭按钮仍可用；该 run 后续因旧的 60 秒探针在状态已自动回到 `idle` 时重复发送 `idle` 而超时，`cleanupSafe=true`。脚本已先切换 `thinking` 再开始延迟验证，避免把“重复状态不重置计时”的产品行为误判为失败。随后复跑分别受到桌面像素采样超时与外部鼠标位移干扰，均安全清理，因此本轮不把完整原生套件标记为新成功基线。
 - **2026-07-22 当前 Release 产物**：因用户选择的 `D:\Apifox` 目录仅允许管理员写入，正式产品已统一更名为 `furry-agent-pet`，并从当前源码重新执行 `npm run check` 与 `npm run tauri:build:windows -- --no-sign --ci`。生成的 NSIS 明确记录 `PRODUCTNAME/MAINBINARYNAME=furry-agent-pet`、`INSTALLMODE=perMachine`、`RequestExecutionLevel admin`、FAS `INSTALLERICON`，并包含 `MUI_PAGE_DIRECTORY` 安装目录选择页。Portable EXE 为 14,361,088 bytes、SHA-256 `55987FD890CDDFF6513FD6601F2B3B3FE6DFAB4A92495718998386C557B64EA0`，NSIS 为 5,766,250 bytes、SHA-256 `81D40108AFF885D99DEBF37C7B31C434B322790B1ADFD46CD398FA06E413DDAF`，Authenticode 均为 `NotSigned`。安装器安全预检通过；尚未替用户确认 UAC，也未执行本轮完整安装/卸载与安装后 Release 套件，不替代历史安装后基线。
 - **2026-07-22 最新完整成功 Debug 基线**：run `.cache/native-windows-smoke/1784697111517-1268` 从当前源码完整构建 20,264,448-byte Debug EXE，SHA-256 `BE0C7AD5499978751AC0BEA81CDA641DEA3F01C88FFCC731EF4E2B78F8AB5382`；`run-result.json` 为 `success=true`、`cleanupSafe=true`。完整 `npm run check` 为 14/14 Vitest 文件、74/74 前端测试、57/57 Rust 测试。
@@ -214,19 +222,18 @@ npm run smoke:windows:installer
 
 ## 尚未覆盖与发布阻塞项
 
-- macOS、Linux X11 和 Linux Wayland 尚未执行原生构建、安装与运行测试；远程 CI 尚未观察到实际通过记录。
 - 当前源码安装包与历史安装包均未签名。升级/降级、自动更新、Windows 10/ARM64，以及安装后 Release 的本地包原生对话框、导入、源目录失效后重启、删除和坏包 UI 拒绝尚未验证；本轮使用 `/NS`，因此也未验证快捷方式创建/删除。
 - Windows 物理多显示器拔插、负坐标布局、100%/150%/200% 混合 DPI 仍需实机矩阵。
 - `error` 确认和悬停详情已有原生 CDP 证据；选择气泡文本暂停和 file-only 详情目前只有 Vitest 自动化证据，仍缺对应原生逐项交互冒烟。
 - 当前源码 Windows 11 x64 Debug 已操作真实托盘图标与六项菜单命令，并真实观察 `已连接` / `未连接`；`正在连接` / `已停用` 仅由 Rust 映射单元测试覆盖。tooltip 证据是绑定图标的 UIA accessible name 包含状态文本，不是视觉像素级 tooltip 断言；正常任务栏图标不存在也未被本轮自动化单独验证。
 - 安装后的隔离 Release 已重复真实托盘、透明合成、always-on-top Z-order、无边框 geometry、真实拖动、七状态、设置/首次引导与睡眠变体；尚未重复的主要 UI 范围是本地包导入/删除/坏包拒绝。正式产品身份没有被启动，以避免触碰用户数据。
-- Windows Debug 已有状态文本/DOM 标记 P95 与原生 burst 证据，但尚未测量 GIF 首帧像素呈现，也未形成同时记录三平台 CPU、内存、启动耗时和状态延迟的统一脚本。
+- Windows Debug 已有状态文本/DOM 标记 P95 与原生 burst 证据，但尚未测量 GIF 首帧像素呈现，也未形成覆盖目标 Windows 版本与架构的 CPU、内存、启动耗时和状态延迟统一脚本。
 - 路径穿越、超限、伪装或损坏角色包已有 Rust/TypeScript 自动化覆盖，但尚未通过原生文件对话框逐项做 UI 拒绝冒烟。
 - 发布版 `furry-companion-mcp` 到 Named Pipe 已通过，但仍缺安装后桌宠与真实外部 Agent UI 客户端的一次完整三方端到端验收。
-- 正式发布还缺代码签名、美术再分发授权、自动更新、升级/降级、发布元数据和 macOS 公证。
-- Windows WebView2 完整进程树的稳态内存与 animated GIF idle CPU 仍高于 PRD 性能目标；系统与手动 reduced-motion 的内置静态角色切换、手动设置跨重启恢复和包内按动作映射能力已通过，但切换前后 CPU/内存、初始角色的实际授权 poster、GIF 首帧像素与三平台统一性能脚本仍未验证。
+- 正式发布还缺 Windows 代码签名、美术再分发授权、自动更新、升级/降级和发布元数据。
+- Windows WebView2 完整进程树的稳态内存与 animated GIF idle CPU 仍高于 PRD 性能目标；系统与手动 reduced-motion 的内置静态角色切换、手动设置跨重启恢复和包内按动作映射能力已通过，但切换前后 CPU/内存、初始角色的实际授权 poster、GIF 首帧像素与 Windows 目标矩阵性能脚本仍未验证。
 - MSVC 链接报告缺少运行时 PDB 的 `LNK4099`，不影响本轮构建与运行结果，但发布符号策略仍需处理。
 
 ## 判定
 
-本轮可以确认“**2026-07-22 当前 Debug 源码在这台 Windows 11 x64 机器上完整通过 MCP/IPC、七状态/四 GIF、可扩展交互动作、`clicked` 有界反馈与拖拽不误触点击、系统与手动 reduced-motion 静态降级/恢复、手动设置跨重启恢复、错误与完成气泡、设置/首次引导、140 样本延迟、1001→2 burst、60 秒睡眠切换、窗口/桌面/托盘与安全清理；包内交互/静态动作映射通过自动化验证**”。2026-07-16 安装后隔离 Release 和 NSIS 生命周期仍是上一发布基线，不包含本轮动作层和静态降级。它不是代码签名、快捷方式/任务栏图标、完整本地包 Release UI、真实外部 Agent UI、初始角色授权 poster、统一性能或三平台正式发布完成；发布判断仍必须绑定具体产物与目标平台实机结果。
+本轮可以确认“**2026-07-22 当前 Debug 源码在这台 Windows 11 x64 机器上完整通过 MCP/IPC、七状态/四 GIF、可扩展交互动作、`clicked` 有界反馈与拖拽不误触点击、系统与手动 reduced-motion 静态降级/恢复、手动设置跨重启恢复、错误与完成气泡、设置/首次引导、140 样本延迟、1001→2 burst、60 秒睡眠切换、窗口/桌面/托盘与安全清理；包内交互/静态动作映射通过自动化验证**”。2026-07-16 安装后隔离 Release 和 NSIS 生命周期仍是上一发布基线，不包含本轮动作层和静态降级。它不是代码签名、快捷方式/任务栏图标、完整本地包 Release UI、真实外部 Agent UI、初始角色授权 poster、统一性能或 Windows 正式发布完成；发布判断仍必须绑定具体产物与目标 Windows 环境实机结果。

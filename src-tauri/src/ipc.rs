@@ -493,17 +493,8 @@ fn resolve_endpoint_with_override(
         .unwrap_or_else(default_endpoint)
 }
 
-#[cfg(windows)]
 fn default_endpoint() -> String {
     r"\\.\pipe\furry-companion-mcp".to_owned()
-}
-
-#[cfg(unix)]
-fn default_endpoint() -> String {
-    env::temp_dir()
-        .join("furry-companion-mcp.sock")
-        .to_string_lossy()
-        .into_owned()
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -721,17 +712,10 @@ fn now_ms() -> u64 {
         .unwrap_or(u64::MAX)
 }
 
-#[cfg(windows)]
 async fn connect_endpoint(endpoint: &str) -> io::Result<IpcStream> {
     use tokio::net::windows::named_pipe::ClientOptions;
 
     let stream = ClientOptions::new().open(endpoint)?;
-    Ok(Box::pin(stream))
-}
-
-#[cfg(unix)]
-async fn connect_endpoint(endpoint: &str) -> io::Result<IpcStream> {
-    let stream = tokio::net::UnixStream::connect(endpoint).await?;
     Ok(Box::pin(stream))
 }
 
@@ -745,18 +729,9 @@ mod tests {
         assert_eq!(normalize_address(String::new()).unwrap(), None);
         let config = IpcConfig::default();
 
-        // Test the pure platform default separately so a developer environment
+        // Test the Windows default separately so a developer environment
         // override cannot make this assertion flaky.
-        #[cfg(windows)]
         assert_eq!(default_endpoint(), r"\\.\pipe\furry-companion-mcp");
-
-        #[cfg(unix)]
-        assert_eq!(
-            default_endpoint(),
-            env::temp_dir()
-                .join("furry-companion-mcp.sock")
-                .to_string_lossy()
-        );
 
         assert!(!config.enabled);
         assert!(config.address.is_none());
@@ -1100,6 +1075,7 @@ mod tests {
         StateEvent {
             event_type: "state",
             state: crate::protocol::AgentState::Coding,
+            session_title: None,
             message: Some(message.to_owned()),
             file: None,
         }

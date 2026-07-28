@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "id": "furry-ai-state",
   "name": "Furry AI State",
-  "version": "0.1.0",
-  "description": "The first built-in furry-agent-pet package, using four user-provided furry-ai-state GIF animations.",
+  "version": "0.2.0",
+  "description": "State-specific presets copied from furry-ai-state/media/images, with identical media stored once and referenced by state-scoped action IDs.",
   "author": "To be confirmed before public redistribution",
   "license": "Permission status to be confirmed before public redistribution",
   "canvas": {
@@ -16,49 +16,182 @@
     }
   },
   "animations": {
-    "idle": {
-      "source": "animations/idle.gif",
-      "mediaType": "image/gif",
-      "loop": true,
-      "alt": "蓝色兽耳桌宠安静地待机"
-    },
-    "coding": {
-      "source": "animations/coding.gif",
-      "mediaType": "image/gif",
-      "loop": true,
-      "alt": "蓝色兽耳桌宠使用笔记本电脑工作"
-    },
-    "sleeping": {
+    "idle-1": {
       "source": "animations/sleeping.gif",
       "mediaType": "image/gif",
       "loop": true,
-      "alt": "蓝色兽耳桌宠进入睡眠"
+      "alt": "空闲动作 1"
     },
-    "exhausted": {
+    "idle-2": {
+      "source": "animations/idle.gif",
+      "mediaType": "image/gif",
+      "loop": true,
+      "alt": "空闲动作 2"
+    },
+    "idle-3": {
+      "source": "animations/idle-3.gif",
+      "mediaType": "image/gif",
+      "loop": true,
+      "alt": "空闲动作 3"
+    },
+    "idle-static": {
+      "source": "animations/idle-static.png",
+      "mediaType": "image/png",
+      "loop": false,
+      "alt": "空闲静态动作"
+    },
+    "thinking-1": {
+      "source": "animations/coding.gif",
+      "mediaType": "image/gif",
+      "loop": true,
+      "alt": "思考动作 1"
+    },
+    "thinking-2": {
+      "source": "animations/idle.gif",
+      "mediaType": "image/gif",
+      "loop": true,
+      "alt": "思考动作 2"
+    },
+    "thinking-static": {
+      "source": "animations/idle-static.png",
+      "mediaType": "image/png",
+      "loop": false,
+      "alt": "思考静态动作"
+    },
+    "planning-1": {
+      "source": "animations/planning-1.gif",
+      "mediaType": "image/gif",
+      "loop": true,
+      "alt": "规划动作 1"
+    },
+    "planning-static": {
+      "source": "animations/idle-static.png",
+      "mediaType": "image/png",
+      "loop": false,
+      "alt": "规划静态动作"
+    },
+    "coding-1": {
+      "source": "animations/coding.gif",
+      "mediaType": "image/gif",
+      "loop": true,
+      "alt": "编码动作 1"
+    },
+    "coding-2": {
+      "source": "animations/coding-2.gif",
+      "mediaType": "image/gif",
+      "loop": true,
+      "alt": "编码动作 2"
+    },
+    "coding-static": {
+      "source": "animations/coding-static.png",
+      "mediaType": "image/png",
+      "loop": false,
+      "alt": "编码静态动作"
+    },
+    "testing-1": {
       "source": "animations/exhausted.gif",
       "mediaType": "image/gif",
       "loop": true,
-      "alt": "蓝色兽耳桌宠疲惫地喘气"
+      "alt": "测试动作 1"
+    },
+    "testing-static": {
+      "source": "animations/testing-static.png",
+      "mediaType": "image/png",
+      "loop": false,
+      "alt": "测试静态动作"
+    },
+    "success-1": {
+      "source": "animations/idle.gif",
+      "mediaType": "image/gif",
+      "loop": true,
+      "alt": "成功动作 1"
+    },
+    "success-2": {
+      "source": "animations/coding.gif",
+      "mediaType": "image/gif",
+      "loop": true,
+      "alt": "成功动作 2"
+    },
+    "success-3": {
+      "source": "animations/idle-3.gif",
+      "mediaType": "image/gif",
+      "loop": true,
+      "alt": "成功动作 3"
+    },
+    "success-4": {
+      "source": "animations/sleeping.gif",
+      "mediaType": "image/gif",
+      "loop": true,
+      "alt": "成功动作 4"
+    },
+    "success-static": {
+      "source": "animations/success-static.png",
+      "mediaType": "image/png",
+      "loop": false,
+      "alt": "成功静态动作"
+    },
+    "error-1": {
+      "source": "animations/error-1.gif",
+      "mediaType": "image/gif",
+      "loop": true,
+      "alt": "错误动作 1"
+    },
+    "error-2": {
+      "source": "animations/exhausted.gif",
+      "mediaType": "image/gif",
+      "loop": true,
+      "alt": "错误动作 2"
+    },
+    "error-static": {
+      "source": "animations/error-static.png",
+      "mediaType": "image/png",
+      "loop": false,
+      "alt": "错误静态动作"
     }
   },
   "states": {
-    "idle": "idle",
-    "thinking": "idle",
-    "planning": "idle",
-    "coding": "coding",
-    "testing": "coding",
-    "success": "idle",
-    "error": "exhausted"
+    "idle": "idle-2",
+    "thinking": "thinking-1",
+    "planning": "planning-1",
+    "coding": "coding-1",
+    "testing": "testing-1",
+    "success": "success-1",
+    "error": "error-1"
+  },
+  "stateAnimationChoices": {
+    "idle": ["idle-2", "idle-1", "idle-3", "idle-static"],
+    "thinking": ["thinking-1", "thinking-2", "thinking-static"],
+    "planning": ["planning-1", "planning-static"],
+    "coding": ["coding-1", "coding-2", "coding-static"],
+    "testing": ["testing-1", "testing-static"],
+    "success": ["success-1", "success-2", "success-3", "success-4", "success-static"],
+    "error": ["error-1", "error-2", "error-static"]
   },
   "stateVariants": {
     "idle": [
       {
-        "animation": "sleeping",
+        "animation": "idle-1",
         "activateAfterMs": 60000
       }
     ]
   },
   "interactions": {},
-  "reducedMotionAnimations": {},
-  "fallbackAnimation": "idle"
+  "reducedMotionAnimations": {
+    "idle-1": "idle-static",
+    "idle-2": "idle-static",
+    "idle-3": "idle-static",
+    "thinking-1": "thinking-static",
+    "thinking-2": "thinking-static",
+    "planning-1": "planning-static",
+    "coding-1": "coding-static",
+    "coding-2": "coding-static",
+    "testing-1": "testing-static",
+    "success-1": "success-static",
+    "success-2": "success-static",
+    "success-3": "success-static",
+    "success-4": "success-static",
+    "error-1": "error-static",
+    "error-2": "error-static"
+  },
+  "fallbackAnimation": "idle-2"
 }

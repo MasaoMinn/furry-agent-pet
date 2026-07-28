@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use serde::Serialize;
 use serde_json::{Map, Value};
 use tauri::{AppHandle, Runtime};
+use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_store::StoreExt;
 
 const STORE_PATH: &str = "settings.json";
@@ -18,9 +19,9 @@ pub struct AppSettings {
     scale: f64,
     opacity: f64,
     always_on_top: bool,
+    launch_at_startup: bool,
     show_state_bubble: bool,
     show_file_path: bool,
-    success_bubble_duration_ms: u64,
     pet_package_id: String,
     state_animation_overrides: BTreeMap<String, String>,
     onboarding_version: u32,
@@ -32,9 +33,9 @@ impl Default for AppSettings {
             scale: 1.0,
             opacity: 1.0,
             always_on_top: true,
+            launch_at_startup: false,
             show_state_bubble: true,
             show_file_path: false,
-            success_bubble_duration_ms: 15_000,
             pet_package_id: DEFAULT_PET_PACKAGE_ID.to_owned(),
             state_animation_overrides: BTreeMap::new(),
             onboarding_version: 0,
@@ -51,15 +52,9 @@ impl AppSettings {
             scale: bounded_number(object, "scale", 0.5, 2.0, defaults.scale),
             opacity: bounded_number(object, "opacity", 0.3, 1.0, defaults.opacity),
             always_on_top: boolean(object, "alwaysOnTop", defaults.always_on_top),
+            launch_at_startup: boolean(object, "launchAtStartup", defaults.launch_at_startup),
             show_state_bubble: boolean(object, "showStateBubble", defaults.show_state_bubble),
             show_file_path: boolean(object, "showFilePath", defaults.show_file_path),
-            success_bubble_duration_ms: bounded_integer(
-                object,
-                "successBubbleDurationMs",
-                3_000,
-                60_000,
-                defaults.success_bubble_duration_ms,
-            ),
             pet_package_id: package_id(object).unwrap_or(defaults.pet_package_id),
             state_animation_overrides: state_animation_overrides(object),
             onboarding_version: non_negative_u32(object, "onboardingVersion")
@@ -73,6 +68,7 @@ pub fn load_app_settings(app: AppHandle) -> Result<AppSettings, String> {
     let store = app.store(STORE_PATH).map_err(|error| error.to_string())?;
     let stored = store.get(STORE_KEY);
     let settings = AppSettings::normalize(stored.as_ref());
+    sync_launch_at_startup(&app, settings.launch_at_startup)?;
     let normalized = serde_json::to_value(&settings).map_err(|error| error.to_string())?;
 
     if stored.as_ref() != Some(&normalized) {
@@ -86,6 +82,7 @@ pub fn load_app_settings(app: AppHandle) -> Result<AppSettings, String> {
 #[tauri::command]
 pub fn save_app_settings(app: AppHandle, settings: Value) -> Result<AppSettings, String> {
     let settings = AppSettings::normalize(Some(&settings));
+    sync_launch_at_startup(&app, settings.launch_at_startup)?;
     persist(&app, &settings)?;
     Ok(settings)
 }
@@ -96,6 +93,7 @@ pub fn reset_app_settings(app: AppHandle, onboarding_version: u32) -> Result<App
         onboarding_version,
         ..AppSettings::default()
     };
+    sync_launch_at_startup(&app, settings.launch_at_startup)?;
     persist(&app, &settings)?;
     Ok(settings)
 }
@@ -123,6 +121,24 @@ fn persist(app: &AppHandle, settings: &AppSettings) -> Result<(), String> {
     Ok(())
 }
 
+fn sync_launch_at_startup<R: Runtime>(
+    app: &AppHandle<R>,
+    launch_at_startup: bool,
+) -> Result<(), String> {
+    let autolaunch = app.autolaunch();
+    let currently_enabled = autolaunch.is_enabled().map_err(|error| error.to_string())?;
+    if currently_enabled == launch_at_startup {
+        return Ok(());
+    }
+
+    if launch_at_startup {
+        autolaunch.enable()
+    } else {
+        autolaunch.disable()
+    }
+    .map_err(|error| error.to_string())
+}
+
 fn bounded_number(
     object: Option<&Map<String, Value>>,
     key: &str,
@@ -134,20 +150,6 @@ fn bounded_number(
         .and_then(|object| object.get(key))
         .and_then(Value::as_f64)
         .filter(|value| value.is_finite())
-        .map(|value| value.clamp(min, max))
-        .unwrap_or(fallback)
-}
-
-fn bounded_integer(
-    object: Option<&Map<String, Value>>,
-    key: &str,
-    min: u64,
-    max: u64,
-    fallback: u64,
-) -> u64 {
-    object
-        .and_then(|object| object.get(key))
-        .and_then(Value::as_u64)
         .map(|value| value.clamp(min, max))
         .unwrap_or(fallback)
 }
@@ -229,18 +231,9 @@ mod tests {
         assert_eq!(settings.scale, 2.0);
         assert_eq!(settings.opacity, 0.3);
         assert!(settings.always_on_top);
+        assert!(!settings.launch_at_startup);
         assert!(settings.show_file_path);
-        assert_eq!(settings.success_bubble_duration_ms, 60_000);
         assert_eq!(settings.onboarding_version, 0);
-    }
-
-    #[test]
-    fn rejects_fractional_duration() {
-        let settings = AppSettings::normalize(Some(&json!({
-            "successBubbleDurationMs": 3_500.5
-        })));
-
-        assert_eq!(settings.success_bubble_duration_ms, 15_000);
     }
 
     #[test]
@@ -267,11 +260,12 @@ mod tests {
         let object = value.as_object().expect("settings object");
 
         assert_eq!(object.len(), 9);
+        assert_eq!(object.get("launchAtStartup"), Some(&json!(false)));
         assert_eq!(object.get("petPackageId"), Some(&json!("furry-ai-state")));
         assert!(!object.contains_key("reduceMotion"));
         assert!(!object.contains_key("ipcAddress"));
         assert!(!object.contains_key("ipcEnabled"));
-        assert_eq!(object.get("successBubbleDurationMs"), Some(&json!(15_000)));
+        assert!(!object.contains_key("successBubbleDurationMs"));
         assert_eq!(object.get("stateAnimationOverrides"), Some(&json!({})));
     }
 }

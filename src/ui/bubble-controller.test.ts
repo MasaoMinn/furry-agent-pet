@@ -3,10 +3,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DEFAULT_SETTINGS } from "../domain/settings";
-import { BubbleController } from "./bubble-controller";
+import { BubbleController, SUCCESS_MESSAGE_DURATION_MS } from "./bubble-controller";
 
 describe("BubbleController", () => {
   let bubble: HTMLElement;
+  let sessionTitle: HTMLElement;
   let message: HTMLElement;
   let file: HTMLElement;
   let closeButton: HTMLButtonElement;
@@ -17,18 +18,21 @@ describe("BubbleController", () => {
     vi.useFakeTimers();
     document.body.innerHTML = `
       <section id="bubble" hidden>
+        <strong id="session-title" hidden></strong>
         <span id="eyebrow"></span>
         <p id="message"></p>
         <p id="file"></p>
         <button id="close"></button>
       </section>`;
     bubble = required("#bubble");
+    sessionTitle = required("#session-title");
     message = required("#message");
     file = required("#file");
     closeButton = required("#close");
     onErrorAcknowledged = vi.fn();
     controller = new BubbleController(
       bubble,
+      sessionTitle,
       required("#eyebrow"),
       message,
       file,
@@ -58,6 +62,29 @@ describe("BubbleController", () => {
     );
     expect(message.textContent).toBe(hostile);
     expect(message.querySelector("img")).toBeNull();
+  });
+
+  it("shows a session title as plain text and hides it when absent", () => {
+    const hostileTitle = '<img src=x onerror="globalThis.pwned=true">';
+    controller.show(
+      {
+        type: "state",
+        state: "coding",
+        sessionTitle: hostileTitle,
+        message: "working",
+      },
+      DEFAULT_SETTINGS,
+    );
+    expect(sessionTitle.hidden).toBe(false);
+    expect(sessionTitle.textContent).toBe(hostileTitle);
+    expect(sessionTitle.querySelector("img")).toBeNull();
+
+    controller.show(
+      { type: "state", state: "testing", message: "running" },
+      DEFAULT_SETTINGS,
+    );
+    expect(sessionTitle.hidden).toBe(true);
+    expect(sessionTitle.textContent).toBe("");
   });
 
   it("auto closes, while hover pauses and resumes the remaining time", () => {
@@ -179,7 +206,7 @@ describe("BubbleController", () => {
     expect(bubble.hidden).toBe(false);
     expect(message.textContent).toBe("replacement");
     bubble.dispatchEvent(new Event("pointerleave"));
-    vi.advanceTimersByTime(DEFAULT_SETTINGS.successBubbleDurationMs);
+    vi.advanceTimersByTime(SUCCESS_MESSAGE_DURATION_MS);
     expect(bubble.hidden).toBe(true);
   });
 

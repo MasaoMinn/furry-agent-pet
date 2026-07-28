@@ -59,6 +59,8 @@ pub struct PetPackageManifest {
     canvas: PetCanvas,
     animations: BTreeMap<String, PetAnimation>,
     states: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    state_animation_choices: BTreeMap<String, Vec<String>>,
     #[serde(default)]
     state_variants: BTreeMap<String, Vec<PetStateVariant>>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -471,6 +473,62 @@ fn validate_manifest(manifest: &PetPackageManifest) -> Result<(), String> {
     {
         return Err("Pet package contains an unknown Agent state".to_owned());
     }
+    if !manifest.state_animation_choices.is_empty() {
+        if manifest.state_animation_choices.len() != AGENT_STATES.len() {
+            return Err(
+                "Pet package must declare choices for exactly seven Agent states".to_owned(),
+            );
+        }
+        let mut total_choices = 0_usize;
+        for state in AGENT_STATES {
+            let choices = manifest
+                .state_animation_choices
+                .get(state)
+                .ok_or_else(|| format!("Pet package is missing choices for the {state} state"))?;
+            if choices.is_empty() || choices.len() > MAX_VARIANTS_PER_STATE {
+                return Err(format!(
+                    "State {state} must contain between 1 and {MAX_VARIANTS_PER_STATE} animation choices"
+                ));
+            }
+            total_choices += choices.len();
+            let mut unique_choices = BTreeSet::new();
+            for animation_id in choices {
+                validate_identifier(animation_id, "state animation choice")?;
+                if !manifest.animations.contains_key(animation_id) {
+                    return Err(format!(
+                        "Pet package state {state} choices reference an unknown animation"
+                    ));
+                }
+                if !unique_choices.insert(animation_id) {
+                    return Err(format!(
+                        "Pet package state {state} choices contain duplicate animations"
+                    ));
+                }
+            }
+            if !choices.contains(
+                manifest
+                    .states
+                    .get(state)
+                    .expect("validated state mapping must exist"),
+            ) {
+                return Err(format!(
+                    "Pet package state {state} choices must include its default animation"
+                ));
+            }
+        }
+        if total_choices > MAX_VARIANTS_TOTAL {
+            return Err(format!(
+                "A pet package cannot contain more than {MAX_VARIANTS_TOTAL} state animation choices"
+            ));
+        }
+        if manifest
+            .state_animation_choices
+            .keys()
+            .any(|state| !AGENT_STATES.contains(&state.as_str()))
+        {
+            return Err("Pet package contains choices for an unknown Agent state".to_owned());
+        }
+    }
 
     let mut total_variants = 0_usize;
     for (state, variants) in &manifest.state_variants {
@@ -486,6 +544,16 @@ fn validate_manifest(manifest: &PetPackageManifest) -> Result<(), String> {
         for variant in variants {
             if !manifest.animations.contains_key(&variant.animation) {
                 return Err("A delayed variant references an unknown animation".to_owned());
+            }
+            if !manifest.state_animation_choices.is_empty()
+                && !manifest
+                    .state_animation_choices
+                    .get(state)
+                    .is_some_and(|choices| choices.contains(&variant.animation))
+            {
+                return Err(
+                    "A delayed variant references an animation from another state".to_owned(),
+                );
             }
             if variant.activate_after_ms == 0 || variant.activate_after_ms > MAX_VARIANT_DELAY_MS {
                 return Err("A delayed variant duration is outside the supported range".to_owned());
@@ -920,17 +988,9 @@ fn read_bounded_regular_file(
 ) -> Result<Vec<u8>, String> {
     let mut options = fs::OpenOptions::new();
     options.read(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.custom_flags(libc::O_CLOEXEC | libc::O_NOFOLLOW);
-    }
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::OpenOptionsExt;
-        const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
-        options.custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
-    }
+    use std::os::windows::fs::OpenOptionsExt;
+    const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+    options.custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
 
     let mut file = options.open(path).map_err(|_| match kind {
         PackageFileKind::Manifest => {
@@ -1018,16 +1078,10 @@ fn reject_link_or_reparse(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-#[cfg(windows)]
 fn is_reparse_point(metadata: &fs::Metadata) -> bool {
     use std::os::windows::fs::MetadataExt;
     const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0000_0400;
     metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
-}
-
-#[cfg(not(windows))]
-fn is_reparse_point(_metadata: &fs::Metadata) -> bool {
-    false
 }
 
 fn validate_catalog_id(catalog_id: &str) -> Result<(), String> {
@@ -1628,6 +1682,63 @@ mod tests {
             })
             .collect();
         assert!(validate_manifest(&too_many).is_err());
+    }
+
+    #[test]
+    fn state_animation_choices_are_complete_unique_and_state_scoped() {
+        let manifest_json = manifest_json("animations/idle.gif", "image/gif");
+        let mut manifest: PetPackageManifest =
+            serde_json::from_str(&manifest_json).expect("parse manifest fixture");
+        manifest.animations.insert(
+            "sleep".to_owned(),
+            PetAnimation {
+                source: "animations/idle.gif".to_owned(),
+                media_type: "image/gif".to_owned(),
+                loops: true,
+                alt: "sleep".to_owned(),
+            },
+        );
+        manifest.state_animation_choices = manifest
+            .states
+            .iter()
+            .map(|(state, animation)| (state.clone(), vec![animation.clone()]))
+            .collect();
+        manifest
+            .state_animation_choices
+            .get_mut("idle")
+            .expect("idle choices")
+            .push("sleep".to_owned());
+        assert!(validate_manifest(&manifest).is_ok());
+
+        let mut duplicate = manifest.clone();
+        duplicate
+            .state_animation_choices
+            .get_mut("idle")
+            .expect("idle choices")
+            .push("sleep".to_owned());
+        assert!(validate_manifest(&duplicate)
+            .expect_err("duplicate choices must fail")
+            .contains("duplicate"));
+
+        let mut missing_default = manifest.clone();
+        missing_default
+            .state_animation_choices
+            .insert("coding".to_owned(), vec!["sleep".to_owned()]);
+        assert!(validate_manifest(&missing_default)
+            .expect_err("state choices must contain their default")
+            .contains("default animation"));
+
+        let mut cross_state_variant = manifest;
+        cross_state_variant.state_variants.insert(
+            "coding".to_owned(),
+            vec![PetStateVariant {
+                animation: "sleep".to_owned(),
+                activate_after_ms: 1_000,
+            }],
+        );
+        assert!(validate_manifest(&cross_state_variant)
+            .expect_err("cross-state delayed variant must fail")
+            .contains("another state"));
     }
 
     #[test]

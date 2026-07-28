@@ -7,10 +7,12 @@ import {
 } from "./domain/agent-state";
 import {
   loadPetPackageCatalog,
+  resolvePetAnimation,
   selectPetPackage,
   type LoadedPetPackage,
   type PetPackageCatalog,
 } from "./domain/pet-package";
+import { petPackageOptionLabel } from "./domain/pet-package-option-label";
 import {
   CURRENT_ONBOARDING_VERSION,
   DEFAULT_SETTINGS,
@@ -18,7 +20,14 @@ import {
   type AppSettings,
 } from "./domain/settings";
 import { describeError } from "./domain/error-message";
-import { AGENT_CONNECTION_PROMPT } from "./domain/agent-connection-prompt";
+import {
+  AGENT_CONNECTION_PROMPT,
+  CODEX_MCP_COMMAND,
+  MCP_CONFIG_JSON,
+  MCP_RUN_COMMAND,
+  NODE_NPM_CHECK_COMMAND,
+  NPM_CACHE_VERIFY_COMMAND,
+} from "./domain/agent-connection-prompt";
 import { SettingsRepository } from "./runtime/settings-store";
 import {
   importPetPackage,
@@ -28,6 +37,7 @@ import {
 } from "./runtime/pet-package-store";
 import {
   configureIpc,
+  openProjectIntro,
   quitApplication,
   reconnectIpc,
   resizeWindowForScale,
@@ -38,6 +48,8 @@ import {
   type RuntimeSnapshot,
 } from "./runtime/tauri-bridge";
 import { BubbleController } from "./ui/bubble-controller";
+import { showCopyButtonFeedback } from "./ui/copy-button-feedback";
+import { loadActionPreviewPoster } from "./ui/action-preview-poster";
 import {
   PetInteractionController,
   type PetInteractionToken,
@@ -50,6 +62,7 @@ import {
 import { PetRenderer } from "./ui/pet-renderer";
 import { ReducedMotionPreference } from "./ui/reduced-motion-preference";
 import { StateVariantScheduler } from "./ui/state-variant-scheduler";
+import { shouldDismissSettingsFromTarget } from "./ui/settings-dismiss";
 import { TimedPetInteraction } from "./ui/timed-pet-interaction";
 
 const SUCCESS_ANIMATION_DURATION_MS = 8_000;
@@ -69,19 +82,22 @@ const settingsToggle = requiredElement<HTMLButtonElement>("#settings-toggle");
 const onboardingPanel = requiredElement<HTMLElement>("#onboarding-panel");
 const onboardingStatus = requiredElement<HTMLElement>("#onboarding-status");
 const onboardingConnectionLabel = requiredElement<HTMLElement>("#onboarding-connection-label");
-const agentConnectionPrompt = requiredElement<HTMLElement>("#agent-connection-prompt");
 const copyAgentPromptStatus = requiredElement<HTMLElement>("#copy-agent-prompt-status");
 const petPackageInput = requiredElement<HTMLSelectElement>("#pet-package-input");
 const petPackageError = requiredElement<HTMLElement>("#pet-package-error");
 const petPackageStatus = requiredElement<HTMLElement>("#pet-package-status");
 const importPetPackageButton = requiredElement<HTMLButtonElement>("#import-pet-package-button");
 const removePetPackageButton = requiredElement<HTMLButtonElement>("#remove-pet-package-button");
+const stateAnimationOverview = requiredElement<HTMLElement>("#state-animation-overview");
 const stateAnimationGrid = requiredElement<HTMLElement>("#state-animation-grid");
+const actionPreviewStaging = requiredElement<HTMLElement>("#action-preview-staging");
+const actionPreviewImage = requiredElement<HTMLImageElement>("#action-preview-image");
 const settingsActionError = requiredElement<HTMLElement>("#settings-action-error");
 const fatalError = requiredElement<HTMLElement>("#fatal-error");
 
 const bubble = new BubbleController(
   requiredElement<HTMLElement>("#state-bubble"),
+  requiredElement<HTMLElement>("#bubble-session-title"),
   requiredElement<HTMLElement>("#bubble-eyebrow"),
   requiredElement<HTMLElement>("#bubble-message"),
   requiredElement<HTMLElement>("#bubble-file"),
@@ -103,8 +119,10 @@ let settings = { ...DEFAULT_SETTINGS };
 let petCatalog: PetPackageCatalog;
 let petPackage: LoadedPetPackage;
 let currentEvent: AgentStateEvent = { type: "state", state: "idle" };
+let latestAgentEvent: AgentStateEvent = currentEvent;
 let hasRenderedState = false;
 let petRenderer: PetRenderer;
+let actionPreviewRenderer: PetRenderer;
 let stateRevision = 0;
 let successTimer: number | null = null;
 let unsubscribeRuntime: (() => void) | null = null;
@@ -136,14 +154,13 @@ async function bootstrap(): Promise<void> {
       settings.stateAnimationOverrides = {};
       settings = await persistSettings(settings);
     }
-    petRenderer = new PetRenderer(
-      petImage,
-      petPackage,
-      new URL("pets/fallback-idle.svg", document.baseURI).href,
-    );
+    const fallbackPetUrl = new URL("pets/fallback-idle.svg", document.baseURI).href;
+    petRenderer = new PetRenderer(petImage, petPackage, fallbackPetUrl);
+    actionPreviewRenderer = new PetRenderer(actionPreviewImage, petPackage, fallbackPetUrl);
     reducedMotionPreference = new ReducedMotionPreference((enabled) => {
       document.documentElement.dataset.reducedMotion = String(enabled);
       petRenderer.setReducedMotion(enabled);
+      actionPreviewRenderer.setReducedMotion(enabled);
     });
     disposeReducedMotionPreference = bindReducedMotionPreference(reducedMotionPreference);
     bindSettingsControls();
@@ -176,12 +193,15 @@ function receiveState(payload: unknown): void {
     return;
   }
 
+  latestAgentEvent = event;
   renderState(event, true);
 }
 
 function acknowledgeError(): void {
   if (currentEvent.state === "error") {
-    renderState({ type: "state", state: "idle" }, false);
+    const idleEvent: AgentStateEvent = { type: "state", state: "idle" };
+    latestAgentEvent = idleEvent;
+    renderState(idleEvent, false);
   }
 }
 
@@ -223,12 +243,7 @@ function renderState(event: AgentStateEvent, showBubble: boolean): void {
 }
 
 function renderStateAnimation(state: AgentStateEvent["state"]): void {
-  const configuredOverride = settings.stateAnimationOverrides[state];
-  const validConfiguredOverride =
-    configuredOverride && petPackage.manifest.animations[configuredOverride]
-      ? configuredOverride
-      : undefined;
-  petRenderer.render(state, validConfiguredOverride);
+  petRenderer.render(state, validStateAnimationOverride(state));
 }
 
 function renderPetInteraction(_interactionId: string | null): void {
@@ -300,18 +315,18 @@ function bindSettingsControls(): void {
   const settingsForm = requiredElement<HTMLFormElement>("#settings-form");
   const scaleInput = requiredElement<HTMLInputElement>("#scale-input");
   const opacityInput = requiredElement<HTMLInputElement>("#opacity-input");
-  const durationInput = requiredElement<HTMLInputElement>("#duration-input");
   const alwaysOnTopInput = requiredElement<HTMLInputElement>("#always-on-top-input");
+  const launchAtStartupInput = requiredElement<HTMLInputElement>("#launch-at-startup-input");
   const bubbleInput = requiredElement<HTMLInputElement>("#bubble-input");
-  const fileInput = requiredElement<HTMLInputElement>("#file-input");
 
   settingsForm.addEventListener("submit", (event) => event.preventDefault());
-  agentConnectionPrompt.textContent = AGENT_CONNECTION_PROMPT;
+  populateOnboardingContent();
 
   settingsToggle.addEventListener("click", () => setSettingsOpen(settingsPanel.hidden));
   requiredElement<HTMLButtonElement>("#settings-close").addEventListener("click", () =>
     setSettingsOpen(false),
   );
+  app.addEventListener("click", closeSettingsFromPetSurroundings);
   settingsDragHandle.addEventListener("pointerdown", (event) => {
     if (event.button === 0 && !(event.target instanceof Element && event.target.closest("button"))) {
       runSettingsOperation(startWindowDrag(), "无法拖动设置窗口");
@@ -326,24 +341,21 @@ function bindSettingsControls(): void {
     settings.opacity = Number(opacityInput.value) / 100;
     runSettingsOperation(persistAndApplySettings());
   });
-  durationInput.addEventListener("input", () => {
-    settings.successBubbleDurationMs = Number(durationInput.value) * 1_000;
-    runSettingsOperation(persistAndApplySettings());
-  });
   alwaysOnTopInput.addEventListener("change", () => {
     settings.alwaysOnTop = alwaysOnTopInput.checked;
     runSettingsOperation(persistAndApplySettings());
+  });
+  launchAtStartupInput.addEventListener("change", () => {
+    runSettingsOperation(
+      updateLaunchAtStartup(launchAtStartupInput.checked),
+      "无法更改开机自启",
+    );
   });
   bubbleInput.addEventListener("change", () => {
     settings.showStateBubble = bubbleInput.checked;
     if (!settings.showStateBubble) {
       bubble.hide();
     }
-    runSettingsOperation(persistAndApplySettings());
-  });
-  fileInput.addEventListener("change", () => {
-    settings.showFilePath = fileInput.checked;
-    bubble.setFileVisibility(settings.showFilePath, currentEvent.file);
     runSettingsOperation(persistAndApplySettings());
   });
   petPackageInput.addEventListener("change", () => {
@@ -369,6 +381,9 @@ function bindSettingsControls(): void {
   requiredElement<HTMLButtonElement>("#onboarding-button").addEventListener("click", () => {
     setOnboardingOpen(true);
   });
+  requiredElement<HTMLButtonElement>("#project-intro-button").addEventListener("click", () => {
+    runSettingsOperation(openProjectIntro(), "无法打开项目介绍");
+  });
   requiredElement<HTMLButtonElement>("#quit-button").addEventListener("click", () => {
     void requestApplicationExit();
   });
@@ -381,9 +396,23 @@ function bindSettingsControls(): void {
   requiredElement<HTMLButtonElement>("#onboarding-reconnect").addEventListener("click", () => {
     runSettingsOperation(reconnectIpc(), "无法重新检测连接");
   });
-  requiredElement<HTMLButtonElement>("#copy-agent-prompt").addEventListener("click", () => {
-    void copyAgentConnectionPrompt();
+  const copyAgentPromptButton = requiredElement<HTMLButtonElement>("#copy-agent-prompt");
+  copyAgentPromptButton.addEventListener("click", () => {
+    void copyOnboardingText(AGENT_CONNECTION_PROMPT, "完整指令", copyAgentPromptButton);
   });
+  for (const button of document.querySelectorAll<HTMLButtonElement>("[data-copy-target]")) {
+    button.addEventListener("click", () => {
+      const targetId = button.dataset.copyTarget;
+      const target = targetId ? document.getElementById(targetId) : null;
+      if (target?.textContent) {
+        void copyOnboardingText(
+          target.textContent,
+          button.dataset.copyLabel ?? "内容",
+          button,
+        );
+      }
+    });
+  }
 
   petDragHandle.addEventListener("pointerdown", (event) => {
     if (event.button === 0) {
@@ -394,7 +423,7 @@ function bindSettingsControls(): void {
   petDragHandle.addEventListener("pointerenter", (event) => {
     if (event.pointerType !== "touch") {
       beginPetHover();
-      bubble.showDetails(currentEvent, settings);
+      bubble.showDetails(latestAgentEvent, settings);
     }
   });
   petDragHandle.addEventListener("pointerleave", endPetHover);
@@ -486,21 +515,35 @@ async function requestApplicationExit(): Promise<void> {
   }
 }
 
-async function copyAgentConnectionPrompt(): Promise<void> {
+function populateOnboardingContent(): void {
+  requiredElement<HTMLElement>("#codex-mcp-command").textContent = CODEX_MCP_COMMAND;
+  requiredElement<HTMLElement>("#agent-mcp-config").textContent = MCP_CONFIG_JSON;
+  requiredElement<HTMLElement>("#manual-mcp-config").textContent = MCP_CONFIG_JSON;
+  requiredElement<HTMLElement>("#node-npm-check-command").textContent = NODE_NPM_CHECK_COMMAND;
+  requiredElement<HTMLElement>("#mcp-run-command").textContent = MCP_RUN_COMMAND;
+  requiredElement<HTMLElement>("#npm-cache-command").textContent = NPM_CACHE_VERIFY_COMMAND;
+}
+
+async function copyOnboardingText(
+  value: string,
+  label: string,
+  button: HTMLButtonElement,
+): Promise<void> {
   try {
-    await navigator.clipboard.writeText(AGENT_CONNECTION_PROMPT);
-    copyAgentPromptStatus.textContent = "已复制。现在粘贴给 Agent，并按 Agent 的提示完成连接。";
+    await navigator.clipboard.writeText(value);
+    copyAgentPromptStatus.textContent = `已复制${label}。`;
+    showCopyButtonFeedback(button, "success");
   } catch (error) {
-    copyAgentPromptStatus.textContent = `复制失败：${describeError(error)}。请手动选择上方提示词复制。`;
+    copyAgentPromptStatus.textContent = `复制失败：${describeError(error)}。请手动选择对应内容复制。`;
+    showCopyButtonFeedback(button, "error");
   }
 }
 
 function populatePetPackageControls(): void {
   petPackageInput.replaceChildren(
     ...petCatalog.packages.map(({ catalogId, manifest, source }) => {
-      const sourceLabel = source === "imported" ? "本地 · " : "";
       const option = new Option(
-        `${sourceLabel}${manifest.name} · v${manifest.version}`,
+        petPackageOptionLabel(manifest.name, manifest.version, source),
         catalogId,
       );
       option.title = `${manifest.author} · ${manifest.license}`;
@@ -519,41 +562,212 @@ function populatePetPackageControls(): void {
   }
 }
 
-function populateStateAnimationControls(): void {
-  const animationEntries = Object.entries(petPackage.manifest.animations);
+function populateStateAnimationControls(previewState: AgentState = currentEvent.state): void {
+  collapseStateAnimationChoices();
   stateAnimationGrid.replaceChildren(
     ...AGENT_STATES.map((state) => {
-      const label = document.createElement("label");
-      const labelText = document.createElement("span");
-      const select = document.createElement("select");
-      const defaultAnimation = petPackage.manifest.states[state];
-
-      labelText.textContent = STATE_PRESENTATION[state].label;
-      select.dataset.state = state;
-      select.setAttribute("aria-label", `${STATE_PRESENTATION[state].label}动作`);
-      select.append(new Option(`跟随资源包 · ${defaultAnimation}`, ""));
-      for (const [animationId, animation] of animationEntries) {
-        select.append(new Option(`${animationId} · ${animation.alt}`, animationId));
-      }
-      select.value = validStateAnimationOverride(state) ?? "";
-      select.addEventListener("change", () => {
-        const nextOverrides = { ...settings.stateAnimationOverrides };
-        if (select.value) {
-          nextOverrides[state] = select.value;
-        } else {
-          delete nextOverrides[state];
-        }
-        settings.stateAnimationOverrides = nextOverrides;
-        if (state === currentEvent.state) {
-          refreshPetPresentation();
-        }
-        runSettingsOperation(persistSettings(settings));
+      const item = document.createElement("div");
+      const choiceGrid = document.createElement("div");
+      const animationOverride = validStateAnimationOverride(state) ?? "";
+      const resolved = resolvePetAnimation(petPackage, state, animationOverride || undefined);
+      const card = createActionCard({
+        className: "state-action-card",
+        state,
+        animationOverride,
+        title: STATE_PRESENTATION[state].label,
+        subtitle: resolved.id,
+        ariaLabel: `选择${STATE_PRESENTATION[state].label}状态动作，当前为${resolved.id}`,
+        onActivate: () => toggleAnimationChoices(item, state, choiceGrid),
       });
-
-      label.append(labelText, select);
-      return label;
+      item.className = "state-action-item";
+      item.dataset.state = state;
+      item.dataset.expanded = "false";
+      choiceGrid.id = `animation-choices-${state}`;
+      choiceGrid.className = "animation-choice-grid";
+      choiceGrid.hidden = true;
+      card.setAttribute("aria-expanded", "false");
+      card.setAttribute("aria-controls", choiceGrid.id);
+      item.append(card, choiceGrid);
+      return item;
     }),
   );
+  const currentStateCard = stateAnimationGrid.querySelector<HTMLElement>(
+    `[data-state="${previewState}"]`,
+  );
+  if (currentStateCard) {
+    mountActionPreview(
+      currentStateCard.querySelector<HTMLElement>(".action-preview-slot")!,
+      previewState,
+      validStateAnimationOverride(previewState) ?? "",
+    );
+  }
+}
+
+function createActionCard({
+  className,
+  state,
+  animationOverride,
+  title,
+  subtitle,
+  ariaLabel,
+  onActivate,
+}: {
+  className: string;
+  state: AgentState;
+  animationOverride: string;
+  title: string;
+  subtitle?: string;
+  ariaLabel: string;
+  onActivate: () => void;
+}): HTMLButtonElement {
+  const card = document.createElement("button");
+  const previewSlot = document.createElement("span");
+  const placeholder = document.createElement("img");
+  const copy = document.createElement("span");
+  const heading = document.createElement("strong");
+
+  card.type = "button";
+  card.className = className;
+  card.dataset.state = state;
+  card.dataset.animation = animationOverride || petPackage.manifest.states[state];
+  card.dataset.animationOverride = animationOverride;
+  card.setAttribute("aria-label", ariaLabel);
+  previewSlot.className = "action-preview-slot";
+  placeholder.className = "action-preview-placeholder";
+  const fallback = new URL("pets/fallback-idle.svg", document.baseURI).href;
+  const resolved = resolvePetAnimation(petPackage, state, animationOverride || undefined);
+  placeholder.src = fallback;
+  placeholder.alt = `${title}动作预览`;
+  placeholder.draggable = false;
+  copy.className = "action-card-copy";
+  heading.textContent = title;
+  copy.append(heading);
+  if (subtitle) {
+    const detail = document.createElement("span");
+    detail.textContent = subtitle;
+    copy.append(detail);
+  }
+  previewSlot.append(placeholder);
+  card.append(previewSlot, copy);
+
+  void loadActionPreviewPoster(resolved.url, fallback).then((poster) => {
+    if (placeholder.isConnected) {
+      placeholder.src = poster;
+    }
+  });
+
+  card.addEventListener("click", (event) => {
+    event.stopPropagation();
+    onActivate();
+  });
+  return card;
+}
+
+function mountActionPreview(
+  previewSlot: HTMLElement,
+  state: AgentState,
+  animationOverride: string,
+): void {
+  previewSlot.prepend(actionPreviewImage);
+  actionPreviewImage.hidden = false;
+  actionPreviewRenderer.render(state, animationOverride || undefined);
+}
+
+function toggleAnimationChoices(
+  item: HTMLElement,
+  state: AgentState,
+  choiceGrid: HTMLElement,
+): void {
+  const wasExpanded = item.dataset.expanded === "true";
+  collapseStateAnimationChoices();
+  if (wasExpanded) {
+    const stateCard = item.querySelector<HTMLElement>(".state-action-card");
+    if (stateCard) {
+      mountActionPreview(
+        stateCard.querySelector<HTMLElement>(".action-preview-slot")!,
+        state,
+        validStateAnimationOverride(state) ?? "",
+      );
+    }
+    return;
+  }
+
+  const currentOverride = validStateAnimationOverride(state) ?? "";
+  const candidates = [
+    {
+      animationOverride: "",
+      title: "跟随资源包",
+      animationId: petPackage.manifest.states[state],
+    },
+    ...petPackage.manifest.stateAnimationChoices[state]
+      .filter((animationId) => animationId !== petPackage.manifest.states[state])
+      .map((animationId) => ({
+        animationOverride: animationId,
+        title: animationId,
+        animationId,
+      })),
+  ];
+  choiceGrid.replaceChildren(
+    ...candidates.map(({ animationOverride, title, animationId }) => {
+      const card = createActionCard({
+        className: "animation-choice-card",
+        state,
+        animationOverride,
+        title,
+        subtitle: animationOverride ? undefined : animationId,
+        ariaLabel: `将${STATE_PRESENTATION[state].label}状态设置为${title}`,
+        onActivate: () => selectStateAnimation(state, animationOverride),
+      });
+      card.dataset.animation = animationId;
+      card.setAttribute("aria-pressed", String(animationOverride === currentOverride));
+      return card;
+    }),
+  );
+  item.dataset.expanded = "true";
+  choiceGrid.hidden = false;
+  item.querySelector<HTMLElement>(".state-action-card")?.setAttribute("aria-expanded", "true");
+  const selectedCard = choiceGrid.querySelector<HTMLElement>('[aria-pressed="true"]');
+  if (selectedCard) {
+    mountActionPreview(
+      selectedCard.querySelector<HTMLElement>(".action-preview-slot")!,
+      state,
+      currentOverride,
+    );
+  }
+}
+
+function selectStateAnimation(state: AgentState, animationOverride: string): void {
+  const nextOverrides = { ...settings.stateAnimationOverrides };
+  if (animationOverride) {
+    nextOverrides[state] = animationOverride;
+  } else {
+    delete nextOverrides[state];
+  }
+  settings.stateAnimationOverrides = nextOverrides;
+  if (state === currentEvent.state) {
+    refreshPetPresentation();
+  }
+  runSettingsOperation(persistSettings(settings));
+  populateStateAnimationControls(state);
+  const item = stateAnimationGrid.querySelector<HTMLElement>(`.state-action-item[data-state="${state}"]`);
+  const choiceGrid = item?.querySelector<HTMLElement>(".animation-choice-grid");
+  if (item && choiceGrid) {
+    toggleAnimationChoices(item, state, choiceGrid);
+  }
+}
+
+function collapseStateAnimationChoices(): void {
+  stateAnimationOverview.hidden = false;
+  actionPreviewStaging.append(actionPreviewImage);
+  for (const item of stateAnimationGrid.querySelectorAll<HTMLElement>(".state-action-item")) {
+    item.dataset.expanded = "false";
+    item.querySelector<HTMLElement>(".state-action-card")?.setAttribute("aria-expanded", "false");
+    const choiceGrid = item.querySelector<HTMLElement>(".animation-choice-grid");
+    if (choiceGrid) {
+      choiceGrid.hidden = true;
+      choiceGrid.replaceChildren();
+    }
+  }
 }
 
 async function changePetPackage(packageId: string): Promise<void> {
@@ -563,6 +777,7 @@ async function changePetPackage(packageId: string): Promise<void> {
     const nextPackage = selectPetPackage(petCatalog, packageId);
     petPackage = nextPackage;
     petRenderer.setPackage(nextPackage);
+    actionPreviewRenderer.setPackage(nextPackage);
     settings.petPackageId = nextPackage.catalogId;
     settings.stateAnimationOverrides = {};
     applyPetPackagePresentation();
@@ -661,7 +876,9 @@ function selectAvailablePetPackage(packageId: string): LoadedPetPackage {
 
 function validStateAnimationOverride(state: AgentState): string | undefined {
   const animationId = settings.stateAnimationOverrides[state];
-  return animationId && petPackage.manifest.animations[animationId] ? animationId : undefined;
+  return animationId && petPackage.manifest.stateAnimationChoices[state].includes(animationId)
+    ? animationId
+    : undefined;
 }
 
 function applyPetPackagePresentation(): void {
@@ -695,6 +912,19 @@ async function persistAndApplySettings(): Promise<void> {
   await persistSettings(settings, true);
 }
 
+async function updateLaunchAtStartup(launchAtStartup: boolean): Promise<void> {
+  const previous = settings.launchAtStartup;
+  settings.launchAtStartup = launchAtStartup;
+  applySettingsPresentation(settings);
+  try {
+    await persistSettings(settings, true);
+  } catch (error) {
+    settings.launchAtStartup = previous;
+    applySettingsPresentation(settings);
+    throw error;
+  }
+}
+
 async function resetSettings(): Promise<void> {
   const onboardingVersion = settings.onboardingVersion;
   const revision = ++settingsPersistenceRevision;
@@ -705,6 +935,7 @@ async function resetSettings(): Promise<void> {
   petPackage = selectAvailablePetPackage(settings.petPackageId);
   settings.petPackageId = petPackage.catalogId;
   petRenderer.setPackage(petPackage);
+  actionPreviewRenderer.setPackage(petPackage);
   populatePetPackageControls();
   populateStateAnimationControls();
   applyPetPackagePresentation();
@@ -717,7 +948,6 @@ async function resetSettings(): Promise<void> {
 function applySettingsPresentation(nextSettings: AppSettings): void {
   const scalePercent = Math.round(nextSettings.scale * 100);
   const opacityPercent = Math.round(nextSettings.opacity * 100);
-  const durationSeconds = Math.round(nextSettings.successBubbleDurationMs / 1_000);
 
   app.style.setProperty("--pet-scale", String(nextSettings.scale));
   app.style.setProperty(
@@ -729,24 +959,19 @@ function applySettingsPresentation(nextSettings: AppSettings): void {
   app.style.setProperty("--pet-opacity", String(nextSettings.opacity));
   requiredElement<HTMLInputElement>("#scale-input").value = String(scalePercent);
   requiredElement<HTMLInputElement>("#opacity-input").value = String(opacityPercent);
-  requiredElement<HTMLInputElement>("#duration-input").value = String(durationSeconds);
   requiredElement<HTMLOutputElement>("#scale-output").value = `${scalePercent}%`;
   requiredElement<HTMLOutputElement>("#opacity-output").value = `${opacityPercent}%`;
-  requiredElement<HTMLOutputElement>("#duration-output").value = `${durationSeconds} 秒`;
   requiredElement<HTMLInputElement>("#always-on-top-input").checked = nextSettings.alwaysOnTop;
+  requiredElement<HTMLInputElement>("#launch-at-startup-input").checked =
+    nextSettings.launchAtStartup;
   requiredElement<HTMLInputElement>("#bubble-input").checked = nextSettings.showStateBubble;
-  requiredElement<HTMLInputElement>("#file-input").checked = nextSettings.showFilePath;
   petPackageInput.value = petPackage.catalogId;
-  for (const select of stateAnimationGrid.querySelectorAll<HTMLSelectElement>("select[data-state]")) {
-    const state = select.dataset.state as AgentState;
-    select.value = validStateAnimationOverride(state) ?? "";
-  }
   applyPetPackagePresentation();
 }
 
 async function applyNativeSettings(nextSettings: AppSettings): Promise<void> {
   await setAlwaysOnTop(nextSettings.alwaysOnTop);
-  await resizeWindowForScale(nextSettings.scale, sidePanelOpen());
+  await applyWindowLayout(nextSettings.scale);
 }
 
 async function persistSettings(
@@ -788,9 +1013,18 @@ function reportSettingsError(error: unknown, failurePrefix = "无法应用设置
   settingsActionError.hidden = false;
 }
 
+function closeSettingsFromPetSurroundings(event: MouseEvent): void {
+  if (!shouldDismissSettingsFromTarget(!settingsPanel.hidden, event.target)) {
+    return;
+  }
+  setSettingsOpen(false);
+}
+
 function setSettingsOpen(open: boolean): void {
   if (open) {
     onboardingPanel.hidden = true;
+  } else {
+    collapseStateAnimationChoices();
   }
   settingsPanel.hidden = !open;
   settingsToggle.setAttribute("aria-expanded", String(open));
@@ -818,9 +1052,13 @@ function sidePanelOpen(): boolean {
   return !settingsPanel.hidden || !onboardingPanel.hidden;
 }
 
+async function applyWindowLayout(scale: number): Promise<void> {
+  app.dataset.sidePanelPlacement = await resizeWindowForScale(scale, sidePanelOpen());
+}
+
 function syncWindowLayout(): void {
   runSettingsOperation(
-    resizeWindowForScale(settings.scale, sidePanelOpen()),
+    applyWindowLayout(settings.scale),
     "无法调整侧栏窗口",
   );
 }

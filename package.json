@@ -1,8 +1,8 @@
 {
   "name": "furry-agent-pet",
-  "description": "A lightweight cross-platform desktop pet that visualizes MCP agent state.",
+  "description": "A lightweight Windows desktop pet that visualizes MCP agent state.",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -26,7 +26,8 @@
     "tauri:build:windows": "node scripts/native-command.mjs tauri build --bundles nsis"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2"
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-opener": "^2.5.4"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",

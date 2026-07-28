@@ -2,6 +2,7 @@ import { STATE_PRESENTATION, type AgentStateEvent } from "../domain/agent-state"
 import type { AppSettings } from "../domain/settings";
 
 const NORMAL_MESSAGE_DURATION_MS = 5_000;
+export const SUCCESS_MESSAGE_DURATION_MS = 15_000;
 const DEFAULT_ERROR_MESSAGE = "Agent 遇到问题，等待下一状态或确认。";
 
 export class PausableTimer {
@@ -60,6 +61,7 @@ export class BubbleController {
 
   constructor(
     private readonly bubble: HTMLElement,
+    private readonly sessionTitle: HTMLElement,
     private readonly eyebrow: HTMLElement,
     private readonly message: HTMLElement,
     private readonly file: HTMLElement,
@@ -123,6 +125,9 @@ export class BubbleController {
     }
 
     this.displayedEvent = event;
+    this.sessionTitle.textContent = event.sessionTitle ?? "";
+    this.sessionTitle.hidden = !event.sessionTitle;
+    this.sessionTitle.title = event.sessionTitle ?? "";
     this.eyebrow.textContent = STATE_PRESENTATION[event.state].label;
     this.message.textContent = text;
     this.message.hidden = text === "";
@@ -144,7 +149,7 @@ export class BubbleController {
       return;
     }
     this.timer.start(
-      isSuccess ? settings.successBubbleDurationMs : NORMAL_MESSAGE_DURATION_MS,
+      isSuccess ? SUCCESS_MESSAGE_DURATION_MS : NORMAL_MESSAGE_DURATION_MS,
       () => this.hide(),
     );
     if (this.isEngaged()) {

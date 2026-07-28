@@ -17,6 +17,9 @@ describe("parseAgentStateEvent", () => {
     expect(parseAgentStateEvent({ type: "state", state: "idle", message: 7 })).toBeNull();
     expect(parseAgentStateEvent({ type: "state", state: "idle", message: null })).toBeNull();
     expect(parseAgentStateEvent({ type: "state", state: "idle", file: "x".repeat(1_001) })).toBeNull();
+    expect(
+      parseAgentStateEvent({ type: "state", state: "idle", session_title: 7 }),
+    ).toBeNull();
   });
 
   it("preserves untrusted text for safe textContent rendering", () => {
@@ -26,6 +29,18 @@ describe("parseAgentStateEvent", () => {
       state: "success",
       message,
     });
+  });
+
+  it("maps the optional wire session title without trusting its contents", () => {
+    const sessionTitle = '<img src=x onerror="globalThis.pwned=true">';
+    expect(
+      parseAgentStateEvent({
+        type: "state",
+        state: "testing",
+        session_title: sessionTitle,
+        message: "running",
+      }),
+    ).toEqual({ type: "state", state: "testing", sessionTitle, message: "running" });
   });
 
   it("accepts the 1000 character field boundary", () => {

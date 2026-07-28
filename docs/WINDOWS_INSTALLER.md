@@ -1,13 +1,15 @@
 # Windows 安装包验证
 
-更新日期：2026-07-22  
+更新日期：2026-07-28
 验证环境：Windows 11 x64  
-应用版本：0.1.0  
+应用版本：0.2.0
 完整测试记录：[`SMOKE_TEST_REPORT.md`](SMOKE_TEST_REPORT.md)
 
 ## 当前源码安装器验证结论
 
-2026-07-22 正式产品与主程序已统一更名为 `furry-agent-pet`。由于用户选择的 `D:\Apifox` 目录仅允许管理员写入，正式 NSIS 改为 `perMachine` 并明确生成 `RequestExecutionLevel admin`，同时保留安装目录选择页。当前交付安装器为 `furry-agent-pet-0.1.0-Windows-x64-Setup.exe`，5,766,250 bytes，SHA-256 `81D40108AFF885D99DEBF37C7B31C434B322790B1ADFD46CD398FA06E413DDAF`，Authenticode `NotSigned`；安全预检已通过，完整 UAC 安装/卸载仍需用户确认提权后复验。
+2026-07-28 已从当前 v0.2.0 源码生成正式 NSIS：`furry-agent-pet_0.2.0_x64-setup.exe`，15,654,606 bytes，SHA-256 `7B564985A5777C7499E4A94DDC28217AA9E24F49FD45A7C8E34EF7253B01B090`，Authenticode `NotSigned`。对应 portable EXE 为 24,446,976 bytes，SHA-256 `6278CCF8F5FB4EC615FA8E83DFFCBECFB64887858650D94BEF0D4C0AE0B96350`，同样未签名。正式产品继续使用 `perMachine` 与 `RequestExecutionLevel admin`，并保留安装目录选择页。
+
+本轮 `npm run check` 通过 24/24 Vitest 文件、109/109 前端测试、57/57 Rust 测试、TypeScript、`cargo check`、`cargo fmt --check` 和 production build；随后 `npm run tauri:build:windows -- --no-sign --ci` 完成 Release 与 NSIS 构建。安装器 preflight 检测到本机已有 `D:\Apifox\furry-agent-pet` 的 v0.1.0 安装记录，按安全策略停止，因此没有覆盖现有安装，也没有把安装/卸载生命周期标记为通过。Release 链接阶段继续出现缺少 MSVC runtime PDB 的非阻断 `LNK4099`。
 
 以下为 2026-07-16 旧名称、旧 current-user 模式的历史完整生命周期基线：
 
@@ -98,7 +100,7 @@ NSIS 卸载器负责删除安装目录和标准 HKCU 卸载项。`Software\githu
 - 尚未验证升级/降级、自动更新、Windows 10、ARM64，以及安装后 Release 的本地包原生对话框/导入/源失效重启/删除/坏包 UI 拒绝。本轮使用 `/NS`，未验证快捷方式创建/删除生命周期。
 - 安装后的隔离 Release 已重复桌面、托盘与七状态；正常任务栏图标不存在仍未被当前自动化单独验证，真实外部 Agent UI 客户端也未参与本轮三方端到端。
 - Windows 物理多显示器拔插、负坐标布局和 100%/150%/200% 混合 DPI 仍需实机矩阵。
-- 目前只在一台 Windows 11 x64 机器验证；macOS、Linux X11 和 Linux Wayland 的安装包与原生运行仍未验收。
+- 目前只在一台 Windows 11 x64 机器验证；Windows 10、ARM64 和更多硬件环境仍未验收。
 - 当前 Debug 已通过系统与手动 reduced-motion 的内置静态角色切换、恢复和手动设置跨重启持久化；本安装后 Release 尚未复跑该行为。实际授权 poster、GIF 首帧像素呈现及完整应用 CPU/内存目标仍未通过；MSVC `LNK4099` 运行时 PDB 警告不阻断基线结果，但发布符号策略待补。
 - 美术资源作者与再分发授权仍是 placeholder；发布清单签名和正式发布元数据尚待确认。
 

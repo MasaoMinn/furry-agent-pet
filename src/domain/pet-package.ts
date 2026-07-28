@@ -23,6 +23,7 @@ export interface PetPackageManifest {
   };
   animations: Record<string, PetAnimation>;
   states: Record<AgentState, string>;
+  stateAnimationChoices: Record<AgentState, string[]>;
   stateVariants: Partial<Record<AgentState, PetStateVariant[]>>;
   interactions: Record<string, PetInteractionAction>;
   reducedMotionAnimations: Record<string, string>;
@@ -134,7 +135,7 @@ export function resolvePetAnimation(
   animationOverride?: string,
 ): ResolvedPetAnimation {
   const mappedAnimation =
-    animationOverride && petPackage.manifest.animations[animationOverride]
+    animationOverride && petPackage.manifest.stateAnimationChoices[state].includes(animationOverride)
       ? animationOverride
       : petPackage.manifest.states[state];
   return resolvePetAnimationById(petPackage, mappedAnimation);
@@ -194,6 +195,11 @@ export function validatePetPackageManifest(value: unknown): PetPackageManifest {
       return [state, animationId];
     }),
   ) as Record<AgentState, string>;
+  const stateAnimationChoices = validateStateAnimationChoices(
+    value.stateAnimationChoices,
+    animations,
+    states,
+  );
 
   return {
     schemaVersion: 1,
@@ -206,7 +212,8 @@ export function validatePetPackageManifest(value: unknown): PetPackageManifest {
     canvas,
     animations,
     states,
-    stateVariants: validateStateVariants(value.stateVariants, animations),
+    stateAnimationChoices,
+    stateVariants: validateStateVariants(value.stateVariants, animations, stateAnimationChoices),
     interactions: validateInteractionActions(value.interactions, animations),
     reducedMotionAnimations: validateReducedMotionAnimations(
       value.reducedMotionAnimations,
@@ -214,6 +221,58 @@ export function validatePetPackageManifest(value: unknown): PetPackageManifest {
     ),
     fallbackAnimation,
   };
+}
+
+function validateStateAnimationChoices(
+  value: unknown,
+  animations: Record<string, PetAnimation>,
+  states: Record<AgentState, string>,
+): Record<AgentState, string[]> {
+  if (value === undefined) {
+    return Object.fromEntries(
+      AGENT_STATES.map((state) => [state, [states[state]]]),
+    ) as Record<AgentState, string[]>;
+  }
+  if (!isRecord(value)) {
+    throw new Error("Pet package stateAnimationChoices must be an object");
+  }
+  if (Object.keys(value).some((state) => !AGENT_STATES.includes(state as AgentState))) {
+    throw new Error("Pet package stateAnimationChoices contains an unknown Agent state");
+  }
+
+  const choices = Object.fromEntries(
+    AGENT_STATES.map((state) => {
+      const entries = value[state];
+      if (!Array.isArray(entries) || entries.length === 0 || entries.length > 16) {
+        throw new Error(`Pet package stateAnimationChoices.${state} must contain 1 to 16 entries`);
+      }
+      const animationIds = entries.map((entry, index) => {
+        const animationId = requireIdentifier(
+          entry,
+          `stateAnimationChoices.${state}.${index}`,
+        );
+        if (!animations[animationId]) {
+          throw new Error(
+            `Pet package stateAnimationChoices.${state} references an unknown animation`,
+          );
+        }
+        return animationId;
+      });
+      if (new Set(animationIds).size !== animationIds.length) {
+        throw new Error(`Pet package stateAnimationChoices.${state} contains duplicates`);
+      }
+      if (!animationIds.includes(states[state])) {
+        throw new Error(
+          `Pet package stateAnimationChoices.${state} must include its default animation`,
+        );
+      }
+      return [state, animationIds];
+    }),
+  ) as Record<AgentState, string[]>;
+  if (Object.values(choices).reduce((total, entries) => total + entries.length, 0) > 64) {
+    throw new Error("Pet package has too many state animation choices");
+  }
+  return choices;
 }
 
 function validateReducedMotionAnimations(
@@ -298,6 +357,7 @@ function validateInteractionActions(
 function validateStateVariants(
   value: unknown,
   animations: Record<string, PetAnimation>,
+  stateAnimationChoices: Record<AgentState, string[]>,
 ): Partial<Record<AgentState, PetStateVariant[]>> {
   if (value === undefined) {
     return {};
@@ -323,6 +383,11 @@ function validateStateVariants(
         const animation = requireIdentifier(entry.animation, `stateVariants.${state}.animation`);
         if (!animations[animation]) {
           throw new Error(`Pet package stateVariants.${state} references an unknown animation`);
+        }
+        if (!stateAnimationChoices[state].includes(animation)) {
+          throw new Error(
+            `Pet package stateVariants.${state} references an animation from another state`,
+          );
         }
         const activateAfterMs = requirePositiveInteger(
           entry.activateAfterMs,

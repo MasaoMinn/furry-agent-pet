@@ -6,9 +6,9 @@ export interface AppSettings {
   scale: number;
   opacity: number;
   alwaysOnTop: boolean;
+  launchAtStartup: boolean;
   showStateBubble: boolean;
   showFilePath: boolean;
-  successBubbleDurationMs: number;
   petPackageId: string;
   stateAnimationOverrides: Partial<Record<AgentState, string>>;
   onboardingVersion: number;
@@ -18,9 +18,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   scale: 1,
   opacity: 1,
   alwaysOnTop: true,
+  launchAtStartup: false,
   showStateBubble: true,
   showFilePath: false,
-  successBubbleDurationMs: 15_000,
   petPackageId: "furry-ai-state",
   stateAnimationOverrides: {},
   onboardingVersion: 0,
@@ -33,14 +33,10 @@ export function normalizeSettings(value: unknown): AppSettings {
     scale: clampNumber(candidate.scale, 0.5, 2, DEFAULT_SETTINGS.scale),
     opacity: clampNumber(candidate.opacity, 0.3, 1, DEFAULT_SETTINGS.opacity),
     alwaysOnTop: booleanOr(candidate.alwaysOnTop, DEFAULT_SETTINGS.alwaysOnTop),
+    launchAtStartup: booleanOr(candidate.launchAtStartup, DEFAULT_SETTINGS.launchAtStartup),
     showStateBubble: booleanOr(candidate.showStateBubble, DEFAULT_SETTINGS.showStateBubble),
-    showFilePath: booleanOr(candidate.showFilePath, DEFAULT_SETTINGS.showFilePath),
-    successBubbleDurationMs: clampInteger(
-      candidate.successBubbleDurationMs,
-      3_000,
-      60_000,
-      DEFAULT_SETTINGS.successBubbleDurationMs,
-    ),
+    // Retained in the DTO for Store compatibility, but no longer user-configurable or rendered.
+    showFilePath: false,
     petPackageId: packageIdOr(candidate.petPackageId, DEFAULT_SETTINGS.petPackageId),
     stateAnimationOverrides: normalizeStateAnimationOverrides(candidate.stateAnimationOverrides),
     onboardingVersion: nonNegativeIntegerOr(
@@ -68,12 +64,6 @@ function normalizeStateAnimationOverrides(
 
 function clampNumber(value: unknown, min: number, max: number, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value)
-    ? Math.min(max, Math.max(min, value))
-    : fallback;
-}
-
-function clampInteger(value: unknown, min: number, max: number, fallback: number): number {
-  return typeof value === "number" && Number.isSafeInteger(value)
     ? Math.min(max, Math.max(min, value))
     : fallback;
 }

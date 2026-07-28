@@ -13,6 +13,7 @@ export type AgentState = (typeof AGENT_STATES)[number];
 export interface AgentStateEvent {
   type: "state";
   state: AgentState;
+  sessionTitle?: string;
   message?: string;
   file?: string;
 }
@@ -45,14 +46,16 @@ export function parseAgentStateEvent(value: unknown): AgentStateEvent | null {
 
   const message = parseOptionalField(value, "message");
   const file = parseOptionalField(value, "file");
+  const sessionTitle = parseOptionalField(value, "session_title");
 
-  if (message === null || file === null) {
+  if (message === null || file === null || sessionTitle === null) {
     return null;
   }
 
   return {
     type: "state",
     state: value.state,
+    ...(sessionTitle === undefined ? {} : { sessionTitle }),
     ...(message === undefined ? {} : { message }),
     ...(file === undefined ? {} : { file }),
   };

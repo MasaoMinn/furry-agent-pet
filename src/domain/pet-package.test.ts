@@ -32,6 +32,15 @@ const validManifest = {
     success: "idle",
     error: "idle",
   },
+  stateAnimationChoices: {
+    idle: ["idle", "sleep"],
+    thinking: ["idle"],
+    planning: ["idle"],
+    coding: ["idle"],
+    testing: ["idle"],
+    success: ["idle"],
+    error: ["idle"],
+  },
   stateVariants: {
     idle: [{ animation: "sleep", activateAfterMs: 60_000 }],
   },
@@ -121,13 +130,13 @@ describe("pet package manifest", () => {
     }
   });
 
-  it("keeps the initial four furry-ai-state GIFs and mappings byte-identical", () => {
+  it("keeps the initial four furry-ai-state GIFs byte-identical inside state-scoped presets", () => {
     const { manifest, manifestPath } = loadBundledManifest("furry-ai-state");
     const expectedAnimationSources = {
-      coding: "animations/coding.gif",
-      exhausted: "animations/exhausted.gif",
-      idle: "animations/idle.gif",
-      sleeping: "animations/sleeping.gif",
+      "coding-1": "animations/coding.gif",
+      "error-2": "animations/exhausted.gif",
+      "idle-2": "animations/idle.gif",
+      "idle-1": "animations/sleeping.gif",
     };
 
     for (const [animationId, source] of Object.entries(expectedAnimationSources)) {
@@ -138,19 +147,36 @@ describe("pet package manifest", () => {
       );
     }
     expect(manifest.states).toEqual({
-      idle: "idle",
-      thinking: "idle",
-      planning: "idle",
-      coding: "coding",
-      testing: "coding",
-      success: "idle",
-      error: "exhausted",
+      idle: "idle-2",
+      thinking: "thinking-1",
+      planning: "planning-1",
+      coding: "coding-1",
+      testing: "testing-1",
+      success: "success-1",
+      error: "error-1",
     });
     expect(manifest.stateVariants).toEqual({
-      idle: [{ animation: "sleeping", activateAfterMs: 60_000 }],
+      idle: [{ animation: "idle-1", activateAfterMs: 60_000 }],
+    });
+    expect(manifest.stateAnimationChoices).toEqual({
+      idle: ["idle-2", "idle-1", "idle-3", "idle-static"],
+      thinking: ["thinking-1", "thinking-2", "thinking-static"],
+      planning: ["planning-1", "planning-static"],
+      coding: ["coding-1", "coding-2", "coding-static"],
+      testing: ["testing-1", "testing-static"],
+      success: ["success-1", "success-2", "success-3", "success-4", "success-static"],
+      error: ["error-1", "error-2", "error-static"],
     });
     expect(manifest.interactions).toEqual({});
-    expect(manifest.reducedMotionAnimations).toEqual({});
+    expect(Object.keys(manifest.reducedMotionAnimations)).toHaveLength(15);
+    expect(manifest.reducedMotionAnimations["coding-1"]).toBe("coding-static");
+    expect(manifest.reducedMotionAnimations["error-2"]).toBe("error-static");
+    expect(manifest.reducedMotionAnimations["idle-2"]).toBe("idle-static");
+    for (const animation of Object.values(manifest.animations)) {
+      expect(animation.alt).toMatch(
+        /^(空闲|思考|规划|编码|测试|成功|错误)(?:静态动作|动作 [1-4])$/,
+      );
+    }
   });
 
   it("validates all seven state mappings, delayed variants and interaction actions", () => {
@@ -159,6 +185,7 @@ describe("pet package manifest", () => {
     expect(manifest.stateVariants.idle).toEqual([
       { animation: "sleep", activateAfterMs: 60_000 },
     ]);
+    expect(manifest.stateAnimationChoices.idle).toEqual(["idle", "sleep"]);
     expect(manifest.interactions.dragging).toEqual({ animation: "sleep" });
     expect(manifest.interactions.clicked).toEqual({ animation: "sleep", durationMs: 900 });
     expect(manifest.reducedMotionAnimations).toEqual({});
@@ -321,9 +348,27 @@ describe("pet package manifest", () => {
     expect(resolvePetAnimationById(petPackage, "sleep").id).toBe("sleep");
   });
 
+  it("only accepts animation overrides declared for the requested state", () => {
+    const manifest = validatePetPackageManifest(validManifest);
+    const petPackage: LoadedPetPackage = {
+      catalogId: "test-pet",
+      source: "bundled",
+      manifest,
+      manifestUrl: new URL("https://app.local/pets/test-pet/pet.json"),
+    };
+
+    expect(resolvePetAnimation(petPackage, "idle", "sleep").id).toBe("sleep");
+    expect(resolvePetAnimation(petPackage, "coding", "sleep").id).toBe("idle");
+
+    const invalidChoices = structuredClone(validManifest);
+    invalidChoices.stateAnimationChoices.coding = ["sleep"];
+    expect(() => validatePetPackageManifest(invalidChoices)).toThrow(/default animation/);
+  });
+
   it("ignores a stale override and uses the state mapping", () => {
     const mappedManifest = structuredClone(validManifest);
     mappedManifest.states.coding = "sleep";
+    mappedManifest.stateAnimationChoices.coding = ["sleep"];
     const petPackage: LoadedPetPackage = {
       catalogId: "test-pet",
       source: "bundled",

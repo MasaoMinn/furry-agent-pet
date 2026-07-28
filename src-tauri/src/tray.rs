@@ -23,7 +23,7 @@ struct TrayState {
     connection_status: MenuItem<tauri::Wry>,
 }
 
-/// Installs the desktop pet's system tray icon and its platform-neutral controls.
+/// Installs the desktop pet's Windows system tray icon and controls.
 pub fn setup(app: &tauri::AppHandle) -> tauri::Result<()> {
     let initial_status = ipc::ConnectionStatus::Disabled;
     let connection_status = MenuItem::with_id(
@@ -94,12 +94,7 @@ pub fn setup(app: &tauri::AppHandle) -> tauri::Result<()> {
             }
         });
 
-    // Linux tray backends do not provide reliable click events. Keep their
-    // default left-click menu so the controls remain reachable.
-    #[cfg(not(target_os = "linux"))]
-    {
-        tray = tray.show_menu_on_left_click(false);
-    }
+    tray = tray.show_menu_on_left_click(false);
 
     if let Some(icon) = app.default_window_icon() {
         tray = tray.icon(icon.clone());

@@ -39,6 +39,8 @@ pub struct StateEvent {
     pub event_type: &'static str,
     pub state: AgentState,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub file: Option<String>,
@@ -91,12 +93,14 @@ pub fn parse_state_event(line: &[u8]) -> Result<StateEvent, ProtocolError> {
         .and_then(Value::as_str)
         .ok_or(ProtocolError::InvalidFieldType("state"))?;
     let state = AgentState::parse(raw_state).ok_or(ProtocolError::UnknownState)?;
+    let session_title = parse_optional_text(object.get("session_title"), "session_title")?;
     let message = parse_optional_text(object.get("message"), "message")?;
     let file = parse_optional_text(object.get("file"), "file")?;
 
     Ok(StateEvent {
         event_type: "state",
         state,
+        session_title,
         message,
         file,
     })
@@ -201,12 +205,13 @@ mod tests {
     #[test]
     fn parses_valid_event_and_ignores_unknown_fields() {
         let event = parse_state_event(
-            r#"{"type":"state","state":"thinking","message":"分析中","future":true}"#.as_bytes(),
+            r#"{"type":"state","state":"thinking","session_title":"修复 CI","message":"分析中","future":true}"#.as_bytes(),
         )
         .expect("event should parse");
 
         assert_eq!(event.event_type, "state");
         assert_eq!(event.state, AgentState::Thinking);
+        assert_eq!(event.session_title.as_deref(), Some("修复 CI"));
         assert_eq!(event.message.as_deref(), Some("分析中"));
         assert_eq!(event.file, None);
     }
@@ -253,6 +258,18 @@ mod tests {
             parse_state_event(line.as_bytes()),
             Err(ProtocolError::FieldTooLong("file"))
         );
+
+        let oversized_title = "会".repeat(MAX_TEXT_CHARS + 1);
+        let line = serde_json::json!({
+            "type": "state",
+            "state": "coding",
+            "session_title": oversized_title,
+        })
+        .to_string();
+        assert_eq!(
+            parse_state_event(line.as_bytes()),
+            Err(ProtocolError::FieldTooLong("session_title"))
+        );
     }
 
     #[test]
@@ -264,6 +281,10 @@ mod tests {
         assert_eq!(
             parse_state_event(br#"{"type":"state","state":"idle","file":12}"#),
             Err(ProtocolError::InvalidFieldType("file"))
+        );
+        assert_eq!(
+            parse_state_event(br#"{"type":"state","state":"idle","session_title":12}"#),
+            Err(ProtocolError::InvalidFieldType("session_title"))
         );
     }
 

@@ -1,7 +1,7 @@
 # Windows 性能基线
 
 记录日期：2026-07-15（资源占用基线）；2026-07-16（安装后 Release）；2026-07-22（当前 Debug 动作层）  
-应用版本：0.1.0  
+应用版本：0.1.1
 资源占用测量对象：2026-07-15 的 Windows x64、Tauri 2.11.5、系统 WebView2 131、当日 release 可执行文件、MCP 未连接。完整进程树包含主进程及其 WebView2 后代进程；这些 CPU/内存数字尚未对 2026-07-16 当前 Release 重测。
 
 ## 当前结果
@@ -24,7 +24,7 @@ release 稳态完整进程树进行了两段采样：12 秒内累计约 0.6876 C
 | 1001 条同状态 burst | 2 次 DOM marker 更新 | 2 次 DOM marker 更新 | PASS，上限为 4；最终完整事件清除了省略的 `file` |
 | `idle → sleeping` | 60018.8381 ms | 60028.4089 ms | PASS，均未早于 60,000 ms；576 × 530、完整解码且无 image error |
 
-延迟脚本使用同进程受控 Named Pipe server，在每次 JSON Lines 写入前记录 Node `performance.now()`；WebView 中的 MutationObserver 捕获气泡消息 DOM 更新，并经 CDP Runtime binding 回报 Node。该口径覆盖 Pipe 写入、Rust 消费、Tauri 事件、前端状态/文本更新和 CDP 回传，因此可视为状态文本/DOM 标记可见延迟的保守上界。Debug 证据目录 `.cache/native-windows-smoke/1784201511453-9204`，生命周期 `188.820 s`；20,196,864-byte Debug EXE 的 SHA-256 为 `33D052E6D24DB481F364AAC23BF6582784F3911377F5676ED725A42BC17836F4`。安装后 Release 证据目录 `.cache/native-windows-smoke/1784202165728-19428`。这些数据不测量 GIF 首帧像素呈现，且仅来自一台 Windows 11 x64 机器，不能外推为 macOS/Linux 性能结论。
+延迟脚本使用同进程受控 Named Pipe server，在每次 JSON Lines 写入前记录 Node `performance.now()`；WebView 中的 MutationObserver 捕获气泡消息 DOM 更新，并经 CDP Runtime binding 回报 Node。该口径覆盖 Pipe 写入、Rust 消费、Tauri 事件、前端状态/文本更新和 CDP 回传，因此可视为状态文本/DOM 标记可见延迟的保守上界。Debug 证据目录 `.cache/native-windows-smoke/1784201511453-9204`，生命周期 `188.820 s`；20,196,864-byte Debug EXE 的 SHA-256 为 `33D052E6D24DB481F364AAC23BF6582784F3911377F5676ED725A42BC17836F4`。安装后 Release 证据目录 `.cache/native-windows-smoke/1784202165728-19428`。这些数据不测量 GIF 首帧像素呈现，且仅来自一台 Windows 11 x64 机器，不能外推到其他 Windows 版本、架构或硬件。
 
 ## 2026-07-22 当前 Debug 动作与静态映射复测
 
@@ -43,5 +43,5 @@ release 稳态完整进程树进行了两段采样：12 秒内累计约 0.6876 C
 
 1. 为初始角色制作或取得可再分发的透明 poster，再对比内置静态 SVG、包内 poster、GIF 和 animated WebP，量化减少动态效果前后的解码成本。
 2. 用 ETW/VMMap 区分共享页面、GPU 分配和私有提交，形成可重复的 release 测试脚本。
-3. 在 Windows、macOS、Linux 分别记录冷启动、IPC 延迟、CPU 和内存，避免用单平台数字外推。
-4. 如果完整应用 80 MB 是硬约束，单独验证 `winit/tao + softbuffer + tray-icon` 等纯原生渲染方案；这是架构变更，需与 Tauri 的开发效率、设置 UI 和跨平台维护成本一起决策。
+3. 在 Windows 10/11 与目标 CPU 架构分别记录冷启动、IPC 延迟、CPU 和内存，避免用单台机器数字外推。
+4. 如果完整应用 80 MB 是硬约束，单独验证 `winit/tao + softbuffer + tray-icon` 等纯原生渲染方案；这是架构变更，需与 Tauri 的开发效率和设置 UI 维护成本一起决策。

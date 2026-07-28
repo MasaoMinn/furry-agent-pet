@@ -19,27 +19,17 @@ enum CloseBehavior {
 }
 
 fn close_behavior(tray_available: bool) -> CloseBehavior {
-    #[cfg(target_os = "linux")]
-    {
-        let _ = tray_available;
-        // A successfully-created Linux tray is not guaranteed to be visible
-        // under every desktop shell. Closing must remain a reliable exit.
+    if tray_available {
+        CloseBehavior::Hide
+    } else {
         CloseBehavior::Exit
-    }
-
-    #[cfg(not(target_os = "linux"))]
-    {
-        if tray_available {
-            CloseBehavior::Hide
-        } else {
-            CloseBehavior::Exit
-        }
     }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_autostart::init(Default::default(), None))
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window_recovery::recover_if_offscreen(&window);
@@ -61,10 +51,8 @@ pub fn run() {
         )
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            #[cfg(target_os = "macos")]
-            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
-
             ipc::install(app);
             let tray_available = match tray::setup(app.handle()) {
                 Ok(()) => true,
@@ -132,11 +120,7 @@ mod tests {
     }
 
     #[test]
-    fn closing_with_a_tray_follows_the_platform_safety_policy() {
-        #[cfg(target_os = "linux")]
-        assert_eq!(close_behavior(true), CloseBehavior::Exit);
-
-        #[cfg(not(target_os = "linux"))]
+    fn closing_with_a_reachable_tray_hides_the_window() {
         assert_eq!(close_behavior(true), CloseBehavior::Hide);
     }
 }

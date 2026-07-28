@@ -65,14 +65,13 @@ runtime 包含 `skills/codex.md`、`skills/claude.md`、`skills/cursor.md` 和 `
 - `error`：确实无法恢复的失败。
 - `idle`：没有活动任务。
 
-`message` 与 `file` 是可选字符串，分别不超过 1000 个字符。桌宠会把它们视为不可信文本，不执行其中的 HTML。
+`message` 与 `file` 是可选字符串，分别不超过 1000 个字符。兼容的 runtime 还可在 JSON Lines 事件中提供可选 `session_title`；桌宠会把它显示在气泡顶部，用于区分会话。当前 `furry-companion-mcp` 0.2.0 的 `set_state` 工具尚未暴露该参数，因此 0.2.0 事件继续正常显示但没有会话标题。所有字段都按不可信文本处理，不执行其中的 HTML。
 
 ## IPC 地址
 
 - Windows：`\\.\pipe\furry-companion-mcp`
-- macOS/Linux：操作系统临时目录中的 `furry-companion-mcp.sock`
 
-桌宠设置页不提供自定义 IPC 地址，正常使用时无需配置。开发诊断若设置 `FURRY_COMPANION_IPC_PATH`，必须用同一个环境变量启动 runtime 与桌宠。macOS 的临时目录不一定是 `/tmp`，因此不要把 Unix 地址写死为 `/tmp/furry-companion-mcp.sock`。
+桌宠设置页不提供自定义 IPC 地址，正常使用时无需配置。开发诊断若设置 `FURRY_COMPANION_IPC_PATH`，必须用同一个环境变量启动 runtime 与桌宠，并使用合法的 Windows Named Pipe 地址。
 
 ## 验证连接
 
@@ -96,4 +95,4 @@ npm run smoke:mcp:published -- --runtime <furry-companion-mcp-dist-index.js>
 
 ## 协议与隐私边界
 
-runtime 是 stdio MCP server，本桌宠不实现第二套 MCP transport。状态通过本机 Named Pipe 或 Unix Domain Socket 传递，应用默认不上传遥测，也不持久化 Agent 的 `message` 或 `file` 内容。
+runtime 是 stdio MCP server，本桌宠不实现第二套 MCP transport。状态通过本机 Windows Named Pipe 传递，应用默认不上传遥测，也不持久化 Agent 的 `session_title`、`message` 或 `file` 内容。

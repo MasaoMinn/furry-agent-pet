@@ -55,11 +55,22 @@ my-pet/
     "success": "idle",
     "error": "idle"
   },
+  "stateAnimationChoices": {
+    "idle": ["idle"],
+    "thinking": ["idle"],
+    "planning": ["idle"],
+    "coding": ["coding"],
+    "testing": ["coding"],
+    "success": ["idle"],
+    "error": ["idle"]
+  },
   "fallbackAnimation": "idle"
 }
 ```
 
 七个状态键必须全部存在，但多个状态可以复用同一动作。动画 ID 只引用 `animations` 中的条目，不直接保存绝对文件路径。
+
+`stateAnimationChoices` 显式限定设置页中每个状态可以选择哪些动作。七个状态都必须声明 1–16 个互不重复的动画 ID，并包含 `states` 中对应的默认动作，整包最多 64 个选择项。延迟变体也只能引用所属状态的候选动作。省略该字段的旧资源包会兼容为每个状态只能使用自己的默认动作，不会自动获得跨状态选择权限。即使多个状态的逻辑动作引用同一媒体文件，也应使用状态专属动作 ID，并通过相同 `source` 去重二进制资源。
 
 manifest 的其他结构边界：
 
@@ -67,7 +78,7 @@ manifest 的其他结构边界：
 - 包 ID 和动画 ID 最多 64 个字符，首字符为 ASCII 字母或数字，其余只能使用字母、数字、点、下划线和连字符。
 - `name`、`author`、`license` 最多 128 个字符，`version` 最多 64 个字符，`description` 最多 1024 个字符，动画 `alt` 最多 256 个字符；这些必填文本不得为空。
 - manifest 画布宽高各为 1–2048，`fit` 只能是 `contain` 或 `cover`，锚点 `x` / `y` 必须位于 0–1。
-- `animations` 必须有 1–64 个条目；`fallbackAnimation` 和每个状态/延迟变体都必须引用已声明的动画。
+- `animations` 必须有 1–64 个条目；`fallbackAnimation`、每个状态、状态候选和延迟变体都必须引用已声明的动画。
 - GIF 的 `loop` 必须与文件内嵌 repeat extension 一致：`loop: true` 要求无限重复，`loop: false` 要求文件不是无限重复。浏览器 `<img>` 按 GIF 自带时序与重复次数播放，应用不另建 JavaScript 循环计时器。静态 PNG/WebP 的该字段不改变静态呈现。
 
 ## 延迟动作
@@ -136,7 +147,7 @@ manifest 的其他结构边界：
 
 映射源必须是已声明的 GIF；目标必须是已声明、`loop: false` 的静态 PNG 或 WebP。目标仍属于普通动画条目，因此自动进入现有路径、格式、大小、尺寸、完整解码、整包像素预算、内容寻址快照和逐文件 `assetPaths` 校验，不存在绕过 Rust 导入器的 poster 路径。一个静态动作可以被多个状态、交互或 GIF 复用。
 
-当操作系统的 `prefers-reduced-motion: reduce` 生效时，应用优先显示包内映射；没有映射的 GIF 才退回内置静态角色。设置页不提供手动开关。PNG/WebP 本来就是静态资源，不会再替换。系统偏好关闭后，渲染器回到当时最新的状态、延迟变体或交互动作，不会恢复已经过期的动作。当前 `furry-ai-state` 初始包只含用户提供的四个 GIF，因而显式声明空映射并继续使用统一静态后备；未来加入获得授权的专用 poster 时无需修改渲染器。
+当操作系统的 `prefers-reduced-motion: reduce` 生效时，应用优先显示包内映射；没有映射的 GIF 才退回内置静态角色。设置页不提供手动开关。PNG/WebP 本来就是静态资源，不会再替换。系统偏好关闭后，渲染器回到当时最新的状态、延迟变体或交互动作，不会恢复已经过期的动作。当前 `furry-ai-state` 包已为七个状态接入对应的静态 PNG。
 
 ## 加入内置资源包
 
@@ -144,7 +155,7 @@ manifest 的其他结构边界：
 2. 在 `public/pets/index.json` 中登记 ID 和 `pet.json` 相对路径。
 3. 运行 `npm test`；生产 loader 回归会加载真实 catalog 的每个条目，manifest 回归会递归枚举每个包的 GIF/PNG/WebP，并要求实际媒体集合与 manifest 唯一引用集合完全一致。
 4. 运行 `npm run test:rust`；Rust 会解析真实 catalog，并让每个条目通过 `validate_package_source()` 的已声明媒体安全校验。
-5. 启动应用后，设置页会自动列出新包和其中的所有动作。
+5. 启动应用后，设置页会按 `stateAnimationChoices` 分状态列出动作，不会显示其他状态的候选。
 
 因此，新增动作必须同时出现在动画字典及包目录中：漏文件、未声明的孤儿媒体，以及 catalog ID 与 manifest 不一致都会由自动化发现。2026-07-22 已再次逐字节确认用户提供的外部源、`public/` 和 `dist/` 三份完全一致；现有四个 GIF 的哈希检查是兼容性子集而非“只能有四个动作”的数量断言：
 
@@ -155,7 +166,7 @@ manifest 的其他结构边界：
 | `idle.gif` | 734,301 bytes | `9AFFB3C702AFFD8873A361CF871760C1085BA852C36C9E6132CEE60051BB83BB` |
 | `sleeping.gif` | 737,547 bytes | `EF57DCB29EFCE92DA8C67B0F4579C5ABEB9FCD652094CCD89D36D8B20AE5DC16` |
 
-同一回归还锁定七状态映射：`idle/thinking/planning/success → idle`、`coding/testing → coding`、`error → exhausted`，以及 `idle → sleeping @ 60000 ms`。延迟变体 scheduler 使用可注入定时器，测试覆盖 60 秒边界、状态切换取消、用户 override、过期 state revision 和旧 schedule generation；修改非当前状态的 override 不会重渲染或重新调度当前 `idle`。2026-07-16 的真实 Windows 原生冒烟又分别在 Debug `60018.8381 ms` 和安装后 Release `60028.4089 ms` 观察到 `sleeping.gif`；两者均 `complete=true`、natural size `576 × 530` 且无 image error。
+2026-07-28 内置包从相邻 `furry-ai-state/media/images` 接入 22 个状态专属逻辑预设；相同字节由多个状态专属 ID 引用同一 `source`，实际保存 13 份唯一媒体。默认映射为 `idle-2`、`thinking-1`、`planning-1`、`coding-1`、`testing-1`、`success-1`、`error-1`；四个初始 GIF 路径和哈希保持不变，`idle-2 → idle-1 @ 60000 ms` 继续保留原有 idle/sleeping 行为。延迟变体 scheduler 使用可注入定时器，测试覆盖 60 秒边界、状态切换取消、用户 override、过期 state revision 和旧 schedule generation；修改非当前状态的 override 不会重渲染或重新调度当前 `idle`。2026-07-16 的真实 Windows 原生冒烟分别在 Debug `60018.8381 ms` 和安装后 Release `60028.4089 ms` 观察到旧清单的 `sleeping.gif`；新清单需要重新取得当前源码的原生基线。
 
 内置资源会随安装包分发，因此必须确认作者、许可证和插画再分发授权。当前 `furry-ai-state` 的许可信息仍是 placeholder；上述哈希一致性与运行通过不构成再分发授权，发布前必须替换为可核验的作者和许可证元数据。
 
@@ -188,7 +199,8 @@ manifest 的其他结构边界：
 - manifest 画布和实际媒体：宽高各 1–2048 像素。
 - 整包解码像素：所有唯一媒体累计最多 120,000,000；GIF 按逻辑画布宽 × 高 × 帧数计数，静态 PNG/WebP 按宽 × 高计数。该数值不是每个 GIF 各自独立可用的预算。
 - GIF：最多 300 帧；多帧 GIF 的每帧延迟至少 2 centiseconds（上限约 50 FPS）；单轮累计时长最多 6000 centiseconds（60 秒）。元数据检查使用 16 MiB 内存限制，并在不展开帧像素的模式下检查帧一致性、帧数和延迟。
-- 延迟动作：每个状态最多 16 个，整个包最多 64 个，延迟不超过 24 小时。
+- 状态候选：每个状态 1–16 个，整个包最多 64 个；必须包含默认动作且不能跨状态选择。
+- 延迟动作：每个状态最多 16 个，整个包最多 64 个，延迟不超过 24 小时，并且只能引用该状态的候选动作。
 - 交互动作：最多 32 个；动作 ID 必须安全，且只能引用同一 manifest 已声明的动画。
 - 路径：最多 256 个字符、最多八层，只允许包目录内的普通 UTF-8 相对文件。绝对路径、盘符/UNC、空段、`.`、`..`、反斜杠、冒号、查询/片段字符、百分号编码、控制字符、`< > " | *`、Windows 保留设备名、尾随点/空格、符号链接和重解析点都会被拒绝；仅大小写不同却指向不同资源的路径也会被拒绝。
 - PNG：必须在 32 MiB 解码内存边界内读出完整静态图像并让解码器正常结束；容器、压缩流、像素数据或尾随数据无效都会失败，出现 animation control 的 APNG 会被拒绝。
@@ -196,10 +208,10 @@ manifest 的其他结构边界：
 
 这些限制是本地不可信导入边界，不等同于内置资源的发布授权。内置资源仍需经过代码审查和美术许可确认。未来若开放动画 WebP/APNG，会先为对应解码器增加同等级的帧数、像素和内存限制。
 
-导入后的媒体只通过 Tauri asset protocol 的 `$APPDATA/pet-packages/**/*` scope 展示；前端没有通用文件系统或 shell capability。Windows 原生文件选择器、快照 asset URL、重启播放和 UI 删除已在隔离 Debug runtime 中完成有效包冒烟；macOS、Linux X11 和 Linux Wayland 仍需分别验证，不能从 Windows 结果推定跨平台完成。
+导入后的媒体只通过 Tauri asset protocol 的 `$APPDATA/pet-packages/**/*` scope 展示；前端没有通用文件系统或 shell capability。Windows 原生文件选择器、快照 asset URL、重启播放和 UI 删除已在隔离 Debug runtime 中完成有效包冒烟。
 
 ## 当前运行时验证边界
 
 隔离 Windows Debug runtime 已完成有效包完整链路：原生文件对话框导入；设置仅保存 `local-c6ee…` 且不含源路径；快照 manifest 与四个 GIF 的哈希逐一等于源文件；源目录改名后重启仍从快照加载；同一 GIF 间隔 750 ms 的两帧有 45.08% 像素不同；UI 删除后快照目录消失且设置回退到 `furry-ai-state`。逐文件 `assetPaths` 修复后的 Windows 加载与播放已回归通过，TypeScript 测试覆盖 encoded backslash 路径转换和 manifest/assetPaths 不匹配拒绝。
 
-上述本地包导入/快照/删除结论来自隔离 Windows Debug runtime。2026-07-16 最新安装器基线的未签名正式/隔离 NSIS 为 `EA181E…` / `E629E9…`，权威报告 `.cache/windows-installer-smoke/1784201848768-33384/installer-smoke-report.json`；安装后的隔离 Release 子 run `.cache/native-windows-smoke/1784202165728-19428` 已复跑七状态、四 GIF、桌面/托盘和 60 秒睡眠变体，但**没有**复跑本地包原生对话框、导入、源目录失效后重启、UI 删除、坏包 UI 拒绝或新的 reduced-motion 静态降级。macOS、Linux X11 和 Linux Wayland 仍未实机验证；Windows 物理多屏/混合 DPI、Windows 10/ARM64、真实外部 Agent UI、初始角色的实际授权 poster 与完整性能目标也不属于本轮资源包验收。详见 [`SMOKE_TEST_REPORT.md`](SMOKE_TEST_REPORT.md)。
+上述本地包导入/快照/删除结论来自隔离 Windows Debug runtime。2026-07-16 最新安装器基线的未签名正式/隔离 NSIS 为 `EA181E…` / `E629E9…`，权威报告 `.cache/windows-installer-smoke/1784201848768-33384/installer-smoke-report.json`；安装后的隔离 Release 子 run `.cache/native-windows-smoke/1784202165728-19428` 已复跑七状态、四 GIF、桌面/托盘和 60 秒睡眠变体，但**没有**复跑本地包原生对话框、导入、源目录失效后重启、UI 删除、坏包 UI 拒绝或新的 reduced-motion 静态降级。Windows 物理多屏/混合 DPI、Windows 10/ARM64、真实外部 Agent UI、初始角色的实际授权 poster 与完整性能目标也不属于本轮资源包验收。详见 [`SMOKE_TEST_REPORT.md`](SMOKE_TEST_REPORT.md)。
