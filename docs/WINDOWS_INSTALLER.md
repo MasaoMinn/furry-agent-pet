@@ -7,7 +7,7 @@
 
 ## 当前源码安装器验证结论
 
-2026-07-28 已从当前 v0.2.0 源码生成正式 NSIS：`furry-agent-pet_0.2.0_x64-setup.exe`，15,654,606 bytes，SHA-256 `7B564985A5777C7499E4A94DDC28217AA9E24F49FD45A7C8E34EF7253B01B090`，Authenticode `NotSigned`。对应 portable EXE 为 24,446,976 bytes，SHA-256 `6278CCF8F5FB4EC615FA8E83DFFCBECFB64887858650D94BEF0D4C0AE0B96350`，同样未签名。正式产品继续使用 `perMachine` 与 `RequestExecutionLevel admin`，并保留安装目录选择页。
+2026-07-28 已从当前 v0.2.0 源码生成正式 NSIS：`furry-agent-pet_0.2.0_x64-setup.exe`，15,653,888 bytes，SHA-256 `DAE08F6F2911FB0124622D43BE57E14DA1D33ED0C40B95011D09A87BFECEA7CD`，Authenticode `NotSigned`。对应 portable EXE 为 24,446,976 bytes，SHA-256 `83186F88E402C6E3F0AD0A3315A3EBC85D958D6ADB7A7F1FC41A720D36C29FCC`，同样未签名。正式产品继续使用 `perMachine` 与 `RequestExecutionLevel admin`，并保留安装目录选择页。
 
 本轮 `npm run check` 通过 24/24 Vitest 文件、109/109 前端测试、57/57 Rust 测试、TypeScript、`cargo check`、`cargo fmt --check` 和 production build；随后 `npm run tauri:build:windows -- --no-sign --ci` 完成 Release 与 NSIS 构建。安装器 preflight 检测到本机已有 `D:\Apifox\furry-agent-pet` 的 v0.1.0 安装记录，按安全策略停止，因此没有覆盖现有安装，也没有把安装/卸载生命周期标记为通过。Release 链接阶段继续出现缺少 MSVC runtime PDB 的非阻断 `LNK4099`。
 

@@ -5,25 +5,34 @@ import { describe, expect, it } from "vitest";
 import { shouldDismissSettingsFromTarget } from "./settings-dismiss";
 
 describe("shouldDismissSettingsFromTarget", () => {
-  it("dismisses only an open settings panel from the pet surroundings", () => {
-    const surroundings = document.createElement("div");
+  it("dismisses an open settings panel for any element outside it", () => {
+    const outside = document.createElement("div");
 
-    expect(shouldDismissSettingsFromTarget(true, surroundings)).toBe(true);
-    expect(shouldDismissSettingsFromTarget(false, surroundings)).toBe(false);
+    expect(shouldDismissSettingsFromTarget(true, outside)).toBe(true);
+    expect(shouldDismissSettingsFromTarget(false, outside)).toBe(false);
     expect(shouldDismissSettingsFromTarget(true, null)).toBe(false);
   });
 
-  it.each([
-    ["settings content", '<section id="settings-panel"><button id="target"></button></section>'],
-    ["onboarding content", '<section id="onboarding-panel"><button id="target"></button></section>'],
-    ["pet", '<button id="pet-drag-handle"><span id="target"></span></button>'],
-    ["state chip", '<div class="state-chip"><button id="target"></button></div>'],
-    ["bubble", '<aside id="state-bubble"><button id="target"></button></aside>'],
-  ])("keeps settings open for %s", (_label, markup) => {
-    document.body.innerHTML = markup;
+  it("keeps settings open for nested settings content", () => {
+    document.body.innerHTML =
+      '<section id="settings-panel"><form><button id="target"></button></form></section>';
 
     expect(
       shouldDismissSettingsFromTarget(true, document.querySelector("#target")),
     ).toBe(false);
+  });
+
+  it.each([
+    ["onboarding content", '<section id="onboarding-panel"><button id="target"></button></section>'],
+    ["pet", '<button id="pet-drag-handle"><span id="target"></span></button>'],
+    ["state chip", '<div class="state-chip"><button id="target"></button></div>'],
+    ["bubble", '<aside id="state-bubble"><button id="target"></button></aside>'],
+    ["transparent surroundings", '<div class="pet-column"><span id="target"></span></div>'],
+  ])("dismisses settings for %s", (_label, markup) => {
+    document.body.innerHTML = markup;
+
+    expect(
+      shouldDismissSettingsFromTarget(true, document.querySelector("#target")),
+    ).toBe(true);
   });
 });

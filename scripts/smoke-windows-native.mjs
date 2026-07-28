@@ -1888,22 +1888,22 @@ async function verifyWindowsTrayIntegration(child, mockProcess) {
     selected: selectedPreview,
     restoredDefault: defaultPreview,
   };
-  const protectedClickState = await cdp.evaluate(`(() => {
+  const settingsContentClickState = await cdp.evaluate(`(() => {
     document.querySelector('#settings-form').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    return document.querySelector('#settings-panel')?.hidden;
+  })()`);
+  assert(settingsContentClickState === false, "settings content click closed the settings panel");
+  await cdp.evaluate(`(() => {
     document.querySelector('#pet-drag-handle').dispatchEvent(
       new MouseEvent('click', { bubbles: true, detail: 0 })
     );
-    return document.querySelector('#settings-panel')?.hidden;
+    return true;
   })()`);
-  assert(protectedClickState === false, "pet or settings content click closed the settings panel");
-  await cdp.evaluate(`document.querySelector('.pet-column').dispatchEvent(
-    new MouseEvent('click', { bubbles: true })
-  )`);
   await waitForCdp(
     () => cdp.evaluate("document.querySelector('#settings-panel')?.hidden"),
     Boolean,
     2_000,
-    "pet surroundings click closes settings",
+    "pet click outside settings closes settings",
   );
   await cdp.evaluate("document.querySelector('#settings-toggle').click()" );
   await waitForCdp(
@@ -1917,11 +1917,11 @@ async function verifyWindowsTrayIntegration(child, mockProcess) {
       Math.abs(value.innerWidth - settingsState.innerWidth) < 1 &&
       value.panelWidth > 0,
     5_000,
-    "settings reopen after surroundings dismissal",
+    "settings reopen after outside-click dismissal",
   );
-  report.actions.settings.surroundingsDismiss = {
-    protectedClicksKeptOpen: protectedClickState === false,
-    blankPetColumnClosed: true,
+  report.actions.settings.outsideDismiss = {
+    settingsContentKeptOpen: settingsContentClickState === false,
+    petClickClosed: true,
     reopened: true,
   };
   const closeBeforeScroll = await cdp.evaluate(`(() => {

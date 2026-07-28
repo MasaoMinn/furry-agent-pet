@@ -322,11 +322,16 @@ function bindSettingsControls(): void {
   settingsForm.addEventListener("submit", (event) => event.preventDefault());
   populateOnboardingContent();
 
-  settingsToggle.addEventListener("click", () => setSettingsOpen(settingsPanel.hidden));
+  settingsToggle.addEventListener("click", (event) => {
+    // The toggle lives outside the panel. Prevent the same opening click from
+    // bubbling into the outside-click closer and immediately undoing itself.
+    event.stopPropagation();
+    setSettingsOpen(settingsPanel.hidden);
+  });
   requiredElement<HTMLButtonElement>("#settings-close").addEventListener("click", () =>
     setSettingsOpen(false),
   );
-  app.addEventListener("click", closeSettingsFromPetSurroundings);
+  app.addEventListener("click", closeSettingsFromOutside);
   settingsDragHandle.addEventListener("pointerdown", (event) => {
     if (event.button === 0 && !(event.target instanceof Element && event.target.closest("button"))) {
       runSettingsOperation(startWindowDrag(), "无法拖动设置窗口");
@@ -1013,7 +1018,7 @@ function reportSettingsError(error: unknown, failurePrefix = "无法应用设置
   settingsActionError.hidden = false;
 }
 
-function closeSettingsFromPetSurroundings(event: MouseEvent): void {
+function closeSettingsFromOutside(event: MouseEvent): void {
   if (!shouldDismissSettingsFromTarget(!settingsPanel.hidden, event.target)) {
     return;
   }

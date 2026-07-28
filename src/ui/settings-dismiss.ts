@@ -1,5 +1,4 @@
-const SETTINGS_DISMISS_PROTECTED_SELECTOR =
-  "#settings-panel, #onboarding-panel, #pet-drag-handle, .state-chip, #state-bubble";
+const SETTINGS_PANEL_SELECTOR = "#settings-panel";
 
 export function shouldDismissSettingsFromTarget(
   settingsOpen: boolean,
@@ -8,6 +7,6 @@ export function shouldDismissSettingsFromTarget(
   return (
     settingsOpen &&
     target instanceof Element &&
-    target.closest(SETTINGS_DISMISS_PROTECTED_SELECTOR) === null
+    target.closest(SETTINGS_PANEL_SELECTOR) === null
   );
 }

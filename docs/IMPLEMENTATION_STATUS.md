@@ -3,11 +3,16 @@
 更新日期：2026-07-28
 当前里程碑：v0.2.0 已接入七状态专属预设资源、可展开动作预览、双路径 MCP 接入教程与项目介绍入口；应用范围为 Windows-only，并支持 Windows 开机自启、设置/向导侧栏自动左右避让和可选会话标题气泡。Agent 状态、用户交互动作与 reduced-motion 静态替代保持正交；既有四 GIF、七状态协议和 60 秒 `idle → sleeping` 兼容不变。完整历史证据见 [`SMOKE_TEST_REPORT.md`](SMOKE_TEST_REPORT.md)。
 
+## 2026-07-28 设置面板外部点击关闭
+
+- 设置打开时，仅设置面板自身及其后代元素属于保留区域；点击宠物、状态栏、消息气泡、接入向导区域或透明空白都会关闭设置。
+- 该变更取代此前“宠物、状态栏和气泡点击保持设置打开”的交互规则。
+
 ## 2026-07-28 v0.2.0 Windows 安装包
 
 - npm、Rust crate 与 Tauri 配置版本统一为 `0.2.0`。
 - `npm run check` 通过 24/24 Vitest 文件、109/109 前端测试、57/57 Rust 测试、TypeScript、`cargo check`、`cargo fmt --check` 和 production build。
-- `npm run tauri:build:windows -- --no-sign --ci` 生成 15,654,606-byte NSIS `furry-agent-pet_0.2.0_x64-setup.exe`，SHA-256 `7B564985A5777C7499E4A94DDC28217AA9E24F49FD45A7C8E34EF7253B01B090`，Authenticode `NotSigned`；portable EXE 为 24,446,976 bytes，SHA-256 `6278CCF8F5FB4EC615FA8E83DFFCBECFB64887858650D94BEF0D4C0AE0B96350`。
+- `npm run tauri:build:windows -- --no-sign --ci` 生成 15,653,888-byte NSIS `furry-agent-pet_0.2.0_x64-setup.exe`，SHA-256 `DAE08F6F2911FB0124622D43BE57E14DA1D33ED0C40B95011D09A87BFECEA7CD`，Authenticode `NotSigned`；portable EXE 为 24,446,976 bytes，SHA-256 `83186F88E402C6E3F0AD0A3315A3EBC85D958D6ADB7A7F1FC41A720D36C29FCC`。
 - 安装器 preflight 因本机存在用户的 v0.1.0 安装记录而安全停止；未覆盖、卸载或清理现有应用，本轮不声明安装生命周期通过。Release 链接仍有非阻断 `LNK4099` 调试符号警告。
 
 ## 2026-07-28 接入教程与项目介绍
