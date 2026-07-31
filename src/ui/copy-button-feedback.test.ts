@@ -2,7 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { showCopyButtonFeedback } from "./copy-button-feedback";
+import { resetCopyButtonFeedback, showCopyButtonFeedback } from "./copy-button-feedback";
 
 describe("showCopyButtonFeedback", () => {
   afterEach(() => vi.useRealTimers());
@@ -18,6 +18,19 @@ describe("showCopyButtonFeedback", () => {
 
     vi.advanceTimersByTime(1_600);
     expect(button.textContent).toBe("复制指令");
+    expect(button.dataset.copyState).toBeUndefined();
+  });
+
+  it("cancels stale feedback when the interface language changes", () => {
+    vi.useFakeTimers();
+    const button = document.createElement("button");
+    button.textContent = "复制";
+
+    showCopyButtonFeedback(button, "success");
+    resetCopyButtonFeedback(button, "Copy");
+    vi.advanceTimersByTime(1_600);
+
+    expect(button.textContent).toBe("Copy");
     expect(button.dataset.copyState).toBeUndefined();
   });
 });

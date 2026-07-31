@@ -1,6 +1,14 @@
 # Windows 冒烟测试报告
 
-最近测试日期：2026-07-28
+- **2026-07-31 宠物透明像素命中遮罩完整基线**：宠物命中范围从完整图片矩形改为当前图像 alpha 的 10 px 网格条带，可见像素周围保留一格余量；无法读取像素的自定义资源使用收缩后备区。4/4 定向 Vitest、TypeScript、production build、Rust check/fmt 通过。由于用户普通 Debug 实例正在运行并锁定默认构建产物，本轮在 `.cache/native-mask-target` 完整隔离构建 30,905,856-byte smoke EXE，再复制到未占用的 smoke 路径执行 `--skip-build`；产品源码在构建与运行间未变化。run `.cache/native-windows-smoke/1785483027630-11528` 为 `success=true`、`cleanupSafe=true`，真实点击/拖动/爱心与悬停生命周期通过；七状态延迟 140 样本 p50 `5.08 ms` / p95 `13.92 ms` / max `16.00 ms`，1001 事件收敛为 2 次 DOM mutation，`sleeping.gif` 于 `60,060.59 ms` 激活，透明合成、设置、开机自启、托盘、重启与清理全部通过。
+
+- **2026-07-29 透明区域命中范围与边缘收紧完整基线**：当前源码隔离 Debug run `.cache/native-windows-smoke/1785312588253-35044` 为 `success=true`、`cleanupSafe=true`，使用 30,863,872-byte EXE，SHA-256 `AE860EEF5E0BB18BDC62D384651E41F35822CB5896F39A550F934E2D19B81ECB`。Windows 顶层窗口使用动态物理交互矩形处理 `WM_NCHITTEST`，透明空白返回 `HTTRANSPARENT`；原生拖拽期间临时暂停穿透，`WM_MOUSELEAVE` 负责在指针直接离开窗口时结束前端悬停。设置/向导关闭时只捕获宠物、状态条、可见气泡和错误提示，面板打开时临时捕获整窗以保留面板外点击关闭。真实点击、三颗爱心与 650 ms 恢复通过，真实拖动无误触。完整套件还通过七状态、140 样本延迟 p50 `1.15 ms` / p95 `9.47 ms` / max `10.65 ms`、1001 事件到 2 次 DOM mutation、`sleeping.gif` 于 `60,062.67 ms` 激活、边缘约束、透明合成、设置/中英文切换、开机自启、真实托盘六项、重启持久化和隔离清理。`npm run check` 通过 26/26 Vitest 文件、121/121 前端测试、64/64 Rust 测试、TypeScript/Rust 检查、Rust 格式和 production build。下层第三方窗口实际收到穿透点击尚未由独立原生计数器自动断言，需保留一次人工点击确认。
+
+- **2026-07-29 边缘停靠与中英文切换验证**：全套检查通过 25/25 Vitest 文件、118/118 前端测试、62/62 Rust 测试、TypeScript/Rust 检查、Rust 格式和 production build；随后根据实机反馈把边缘策略收紧为“仅透明留白按 DPI 最多越界 36 个逻辑像素”，宠物可视主体与控制区保持在工作区，11/11 窗口定向测试再次通过。设置与 i18n 单测覆盖语言规范化、Store schema、状态/气泡/接入提示词翻译。当前源码已在 `.cache/native-click-target` 重建隔离 Debug EXE。原生套件 run `.cache/native-windows-smoke/1785306181294-28200`、`1785306234365-24224`、`1785306339048-30308` 以及收紧后的 `1785307254272-2780` 均在进入本次新增边缘/语言断言前，因 Windows 拒绝输入探针恢复鼠标坐标的 `SetCursorPos` 调用而安全停止；均未产生产品断言失败且 `cleanupSafe=true`。因此本轮没有新的真实桌面通过结论，需在允许桌面输入的会话中复跑。
+
+- **2026-07-29 拖拽边界与真实点击爱心定向证据**：窗口约束 10/10 Rust 测试、点击控制器 7/7 定向 Vitest、Rust/TypeScript 检查、production build 和脚本语法检查通过。当前源码在不终止用户普通 Debug 实例的前提下使用 `.cache/native-click-target` 完整重建隔离 Debug EXE；随后 run `.cache/native-windows-smoke/1785304253938-33612/desktop-integration.json` 使用真实 Win32 鼠标输入而非 DOM `.click()`。单击记录 `releasedWithinTimeout=true`、指针位移 `(0,0)`、`recognizedAsClick=true`，进入 `clicked`，三颗爱心的 computed animation name 均为 `click-heart-float`，650 ms 后恢复；真实 `(96,64)` 拖动历史没有 `clicked`。同一 run 把窗口拖向左上外沿后约束为 `0,0–648,762`，完整处于工作区。该 run 之后在托盘 UI Automation 查询遇到 `RPC_E_SERVERFAULT`，最终 `success=false`、`cleanupSafe=true`；因此本条作为本次窗口和真实点击段的有效证据，不替代既有完整成功基线。
+
+最近测试日期：2026-07-29
 应用版本：0.2.0
 结论：**2026-07-28 Windows 隔离 Debug 已从当前源码完整重建并通过七状态预设资源替换、状态专属候选限制、包内静态 reduced-motion，以及既有窗口、托盘、开机自启、持久化、性能和 60 秒睡眠套件。2026-07-16 的安装后 Release 仍是历史基线，不代表本轮资源与候选限制功能。**
 

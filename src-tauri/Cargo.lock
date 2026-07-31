@@ -1063,7 +1063,7 @@ dependencies = [
 
 [[package]]
 name = "furry-agent-pet"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "gif",
  "image-webp",
@@ -1081,6 +1081,7 @@ dependencies = [
  "tauri-plugin-window-state",
  "tempfile",
  "tokio",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

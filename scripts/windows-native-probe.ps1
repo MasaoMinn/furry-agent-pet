@@ -279,6 +279,30 @@ public static class NativeSmokeWindow
         }
     }
 
+    public static bool ClickAt(int x, int y)
+    {
+        POINT original;
+        if (!GetCursorPos(out original) || !SetCursorPos(x, y))
+        {
+            return false;
+        }
+
+        try
+        {
+            Thread.Sleep(120);
+            mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, UIntPtr.Zero);
+            Thread.Sleep(80);
+            mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, UIntPtr.Zero);
+            Thread.Sleep(180);
+            return true;
+        }
+        finally
+        {
+            mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, UIntPtr.Zero);
+            SetCursorPos(original.X, original.Y);
+        }
+    }
+
     public static POINT ReadCursorPosition()
     {
         POINT point;
@@ -535,11 +559,17 @@ if ($action -eq "close") {
     if (-not [NativeSmokeWindow]::DragFromTo($startX, $startY, $endX, $endY)) {
         throw "SendInput-compatible mouse drag failed."
     }
+} elseif ($action -eq "click") {
+    $clickX = [int]::Parse($env:NATIVE_SMOKE_MOVE_X)
+    $clickY = [int]::Parse($env:NATIVE_SMOKE_MOVE_Y)
+    if (-not [NativeSmokeWindow]::ClickAt($clickX, $clickY)) {
+        throw "SendInput-compatible mouse click failed."
+    }
 } elseif ($action -eq "move") {
     $moveX = [int]::Parse($env:NATIVE_SMOKE_MOVE_X)
     $moveY = [int]::Parse($env:NATIVE_SMOKE_MOVE_Y)
     if (-not [NativeSmokeWindow]::MoveCursorTo($moveX, $moveY)) {
-        throw "SetCursorPos failed."
+        throw "SetCursorPos failed for ($moveX,$moveY)."
     }
 } elseif ($action -ne "query" -and $action -ne "pixels") {
     throw "Unsupported native smoke action: $action"

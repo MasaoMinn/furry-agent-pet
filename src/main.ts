@@ -14,6 +14,12 @@ import {
 } from "./domain/pet-package";
 import { petPackageOptionLabel } from "./domain/pet-package-option-label";
 import {
+  agentConnectionPrompt,
+  stateLabel as localizedStateLabel,
+  translate,
+  type TranslationKey,
+} from "./domain/i18n";
+import {
   CURRENT_ONBOARDING_VERSION,
   DEFAULT_SETTINGS,
   normalizeSettings,
@@ -21,7 +27,6 @@ import {
 } from "./domain/settings";
 import { describeError } from "./domain/error-message";
 import {
-  AGENT_CONNECTION_PROMPT,
   CODEX_MCP_COMMAND,
   MCP_CONFIG_JSON,
   MCP_RUN_COMMAND,
@@ -42,19 +47,21 @@ import {
   reconnectIpc,
   resizeWindowForScale,
   setAlwaysOnTop,
+  setPointerCaptureRegions,
   startWindowDrag,
   subscribeToRuntime,
   type ConnectionStatus,
   type RuntimeSnapshot,
 } from "./runtime/tauri-bridge";
 import { BubbleController } from "./ui/bubble-controller";
-import { showCopyButtonFeedback } from "./ui/copy-button-feedback";
+import { resetCopyButtonFeedback, showCopyButtonFeedback } from "./ui/copy-button-feedback";
 import { loadActionPreviewPoster } from "./ui/action-preview-poster";
 import {
   PetInteractionController,
   type PetInteractionToken,
 } from "./ui/pet-interaction-controller";
-import { isPetClickGesture } from "./ui/pet-click-gesture";
+import { isPetClickGesture, isPetNativeClickGesture } from "./ui/pet-click-gesture";
+import { petImageCaptureRegions, pointerCaptureRegions } from "./ui/pointer-capture-regions";
 import {
   resolvePetInteractionDurationMs,
   resolvePetInteractionPresentation,
@@ -68,6 +75,7 @@ import { TimedPetInteraction } from "./ui/timed-pet-interaction";
 const SUCCESS_ANIMATION_DURATION_MS = 8_000;
 const CLICK_INTERACTION_DURATION_MS = 650;
 const CLICK_GESTURE_MAX_DURATION_MS = 300;
+const CLICK_GESTURE_MAX_MOVEMENT_PX = 5;
 
 const app = requiredElement<HTMLElement>("#app");
 const petImage = requiredElement<HTMLImageElement>("#pet-image");
@@ -94,9 +102,12 @@ const actionPreviewStaging = requiredElement<HTMLElement>("#action-preview-stagi
 const actionPreviewImage = requiredElement<HTMLImageElement>("#action-preview-image");
 const settingsActionError = requiredElement<HTMLElement>("#settings-action-error");
 const fatalError = requiredElement<HTMLElement>("#fatal-error");
+const stateBubble = requiredElement<HTMLElement>("#state-bubble");
+const stateChip = requiredElement<HTMLElement>(".state-chip");
+const petColumn = requiredElement<HTMLElement>(".pet-column");
 
 const bubble = new BubbleController(
-  requiredElement<HTMLElement>("#state-bubble"),
+  stateBubble,
   requiredElement<HTMLElement>("#bubble-session-title"),
   requiredElement<HTMLElement>("#bubble-eyebrow"),
   requiredElement<HTMLElement>("#bubble-message"),
@@ -127,12 +138,16 @@ let stateRevision = 0;
 let successTimer: number | null = null;
 let unsubscribeRuntime: (() => void) | null = null;
 let connectionRevision = -1;
+let latestRuntimeSnapshot: RuntimeSnapshot | null = null;
 let settingsPersistenceRevision = 0;
 let settingsWriteQueue: Promise<void> = Promise.resolve();
 let hoverInteractionToken: PetInteractionToken | null = null;
 let petPointerDownAtMs: number | null = null;
+let nativePetDragInProgress = false;
+let suppressNextNativeClick = false;
 let disposeReducedMotionPreference: (() => void) | null = null;
 let reducedMotionPreference: ReducedMotionPreference;
+let disposePointerCaptureRegionSync: (() => void) | null = null;
 
 void bootstrap();
 
@@ -163,12 +178,15 @@ async function bootstrap(): Promise<void> {
       actionPreviewRenderer.setReducedMotion(enabled);
     });
     disposeReducedMotionPreference = bindReducedMotionPreference(reducedMotionPreference);
+    applyLanguagePresentation();
     bindSettingsControls();
     populatePetPackageControls();
     populateStateAnimationControls();
     applySettingsPresentation(settings);
     await applyNativeSettings(settings).catch((error) => reportSettingsError(error));
     renderState(currentEvent, false);
+    disposePointerCaptureRegionSync = installPointerCaptureRegionSync();
+    await syncPointerCaptureRegions();
 
     if (settings.onboardingVersion < CURRENT_ONBOARDING_VERSION) {
       setOnboardingOpen(true);
@@ -179,7 +197,8 @@ async function bootstrap(): Promise<void> {
       onConnection: renderConnection,
       onOpenSettings: () => setSettingsOpen(true),
       onAlwaysOnTopChanged: (alwaysOnTop) =>
-        runSettingsOperation(receiveAlwaysOnTopChanged(alwaysOnTop), "无法保存置顶设置"),
+        runSettingsOperation(receiveAlwaysOnTopChanged(alwaysOnTop), t("saveTopmostFailed")),
+      onPointerCaptureLeave: handlePointerCaptureLeave,
     });
     await configureIpc("", true);
   } catch (error) {
@@ -213,9 +232,10 @@ function renderState(event: AgentStateEvent, showBubble: boolean): void {
   currentEvent = event;
   hasRenderedState = true;
   const presentation = STATE_PRESENTATION[event.state];
+  const stateName = localizedStateLabel(settings.language, event.state);
 
-  stateLabel.textContent = `${presentation.shortLabel} · ${presentation.label}`;
-  petDragHandle.setAttribute("aria-label", `${presentation.label}，拖动桌宠`);
+  stateLabel.textContent = `${presentation.shortLabel} · ${stateName}`;
+  petDragHandle.setAttribute("aria-label", `${stateName} · ${t("dragPet")}`);
   if (stateChanged) {
     app.dataset.state = event.state;
     refreshPetPresentation();
@@ -293,18 +313,21 @@ function renderConnection(snapshot: RuntimeSnapshot): void {
     return;
   }
   connectionRevision = snapshot.revision;
+  latestRuntimeSnapshot = snapshot;
   const labels: Record<ConnectionStatus, string> = {
-    connecting: "正在连接",
-    connected: "已连接",
-    disconnected: "未连接",
-    disabled: "已停用",
+    connecting: t("connecting"),
+    connected: t("connected"),
+    disconnected: t("disconnected"),
+    disabled: t("disabled"),
   };
 
   app.dataset.connection = snapshot.status;
   connectionLabel.textContent = labels[snapshot.status];
-  connectionBadge.textContent = snapshot.status === "connected" ? "MCP 在线" : labels[snapshot.status];
+  connectionBadge.textContent = snapshot.status === "connected" ? t("mcpOnline") : labels[snapshot.status];
   connectionBadge.hidden = snapshot.status === "connected";
-  connectionErrorLabel.textContent = snapshot.lastError ? `连接详情：${snapshot.lastError}` : "";
+  connectionErrorLabel.textContent = snapshot.lastError
+    ? t("connectionDetails", { error: snapshot.lastError })
+    : "";
   connectionErrorLabel.hidden = !snapshot.lastError;
 
   onboardingStatus.dataset.connection = snapshot.status;
@@ -315,12 +338,19 @@ function bindSettingsControls(): void {
   const settingsForm = requiredElement<HTMLFormElement>("#settings-form");
   const scaleInput = requiredElement<HTMLInputElement>("#scale-input");
   const opacityInput = requiredElement<HTMLInputElement>("#opacity-input");
+  const languageInput = requiredElement<HTMLSelectElement>("#language-input");
   const alwaysOnTopInput = requiredElement<HTMLInputElement>("#always-on-top-input");
   const launchAtStartupInput = requiredElement<HTMLInputElement>("#launch-at-startup-input");
   const bubbleInput = requiredElement<HTMLInputElement>("#bubble-input");
 
   settingsForm.addEventListener("submit", (event) => event.preventDefault());
   populateOnboardingContent();
+
+  languageInput.addEventListener("change", () => {
+    settings.language = languageInput.value === "en" ? "en" : "zh-CN";
+    applyLanguagePresentation();
+    runSettingsOperation(persistSettings(settings));
+  });
 
   settingsToggle.addEventListener("click", (event) => {
     // The toggle lives outside the panel. Prevent the same opening click from
@@ -334,7 +364,7 @@ function bindSettingsControls(): void {
   app.addEventListener("click", closeSettingsFromOutside);
   settingsDragHandle.addEventListener("pointerdown", (event) => {
     if (event.button === 0 && !(event.target instanceof Element && event.target.closest("button"))) {
-      runSettingsOperation(startWindowDrag(), "无法拖动设置窗口");
+      runSettingsOperation(startWindowDrag(), t("dragSettingsFailed"));
     }
   });
 
@@ -353,7 +383,7 @@ function bindSettingsControls(): void {
   launchAtStartupInput.addEventListener("change", () => {
     runSettingsOperation(
       updateLaunchAtStartup(launchAtStartupInput.checked),
-      "无法更改开机自启",
+      t("startupFailed"),
     );
   });
   bubbleInput.addEventListener("change", () => {
@@ -368,8 +398,8 @@ function bindSettingsControls(): void {
   });
   importPetPackageButton.disabled = !localPetPackageManagementAvailable();
   importPetPackageButton.title = importPetPackageButton.disabled
-    ? "请在桌面应用中导入本地资源包"
-    : "选择并安全导入 pet.json";
+    ? t("importDesktopOnly")
+    : t("importTitle");
   importPetPackageButton.addEventListener("click", () => {
     void importLocalPetPackage();
   });
@@ -378,32 +408,36 @@ function bindSettingsControls(): void {
   });
 
   requiredElement<HTMLButtonElement>("#reconnect-button").addEventListener("click", () => {
-    runSettingsOperation(reconnectIpc(), "无法重新连接");
+    runSettingsOperation(reconnectIpc(), t("reconnectFailed"));
   });
   requiredElement<HTMLButtonElement>("#reset-button").addEventListener("click", () => {
-    runSettingsOperation(resetSettings(), "无法恢复默认设置");
+    runSettingsOperation(resetSettings(), t("resetFailed"));
   });
   requiredElement<HTMLButtonElement>("#onboarding-button").addEventListener("click", () => {
     setOnboardingOpen(true);
   });
   requiredElement<HTMLButtonElement>("#project-intro-button").addEventListener("click", () => {
-    runSettingsOperation(openProjectIntro(), "无法打开项目介绍");
+    runSettingsOperation(openProjectIntro(), t("openProjectFailed"));
   });
   requiredElement<HTMLButtonElement>("#quit-button").addEventListener("click", () => {
     void requestApplicationExit();
   });
   requiredElement<HTMLButtonElement>("#onboarding-close").addEventListener("click", () => {
-    runSettingsOperation(completeOnboarding(false), "无法关闭接入向导");
+    runSettingsOperation(completeOnboarding(false), t("closeGuideFailed"));
   });
   requiredElement<HTMLButtonElement>("#onboarding-done").addEventListener("click", () => {
-    runSettingsOperation(completeOnboarding(true), "无法保存接入向导状态");
+    runSettingsOperation(completeOnboarding(true), t("saveGuideFailed"));
   });
   requiredElement<HTMLButtonElement>("#onboarding-reconnect").addEventListener("click", () => {
-    runSettingsOperation(reconnectIpc(), "无法重新检测连接");
+    runSettingsOperation(reconnectIpc(), t("detectFailed"));
   });
   const copyAgentPromptButton = requiredElement<HTMLButtonElement>("#copy-agent-prompt");
   copyAgentPromptButton.addEventListener("click", () => {
-    void copyOnboardingText(AGENT_CONNECTION_PROMPT, "完整指令", copyAgentPromptButton);
+    void copyOnboardingText(
+      agentConnectionPrompt(settings.language),
+      t("fullInstruction"),
+      copyAgentPromptButton,
+    );
   });
   for (const button of document.querySelectorAll<HTMLButtonElement>("[data-copy-target]")) {
     button.addEventListener("click", () => {
@@ -412,7 +446,7 @@ function bindSettingsControls(): void {
       if (target?.textContent) {
         void copyOnboardingText(
           target.textContent,
-          button.dataset.copyLabel ?? "内容",
+          button.dataset.copyLabel ?? t("content"),
           button,
         );
       }
@@ -422,7 +456,7 @@ function bindSettingsControls(): void {
   petDragHandle.addEventListener("pointerdown", (event) => {
     if (event.button === 0) {
       petPointerDownAtMs = performance.now();
-      runSettingsOperation(dragPet(), "无法拖动桌宠");
+      runSettingsOperation(dragPet(), t("dragPetFailed"));
     }
   });
   petDragHandle.addEventListener("pointerenter", (event) => {
@@ -431,26 +465,33 @@ function bindSettingsControls(): void {
       bubble.showDetails(latestAgentEvent, settings);
     }
   });
+  petColumn.addEventListener("pointerenter", () => {
+    delete app.dataset.pointerOutside;
+  });
   petDragHandle.addEventListener("pointerleave", endPetHover);
   petDragHandle.addEventListener("click", (event) => {
+    if (event.detail === 0) {
+      triggerPetClick();
+      return;
+    }
+    if (nativePetDragInProgress || suppressNextNativeClick) {
+      suppressNextNativeClick = false;
+      return;
+    }
     const pointerDownAtMs = petPointerDownAtMs;
     petPointerDownAtMs = null;
     if (
+      pointerDownAtMs !== null &&
       isPetClickGesture(
-        event.detail,
         pointerDownAtMs,
         performance.now(),
+        0,
+        0,
         CLICK_GESTURE_MAX_DURATION_MS,
+        CLICK_GESTURE_MAX_MOVEMENT_PX,
       )
     ) {
-      timedPetInteraction.trigger(
-        "clicked",
-        resolvePetInteractionDurationMs(
-          petPackage,
-          "clicked",
-          CLICK_INTERACTION_DURATION_MS,
-        ),
-      );
+      triggerPetClick();
     }
   });
   petDragHandle.addEventListener("focus", () => bubble.showDetails(currentEvent, settings));
@@ -471,6 +512,7 @@ function bindSettingsControls(): void {
     bubble.dispose();
     timedPetInteraction.dispose();
     disposeReducedMotionPreference?.();
+    disposePointerCaptureRegionSync?.();
     unsubscribeRuntime?.();
   });
 }
@@ -484,6 +526,59 @@ function bindReducedMotionPreference(preferenceController: ReducedMotionPreferen
   applyPreference(preference.matches);
   preference.addEventListener("change", handleChange);
   return () => preference.removeEventListener("change", handleChange);
+}
+
+function pointerCaptureElements(): HTMLElement[] {
+  if (!settingsPanel.hidden || !onboardingPanel.hidden) {
+    return [app];
+  }
+  return [stateChip, stateBubble, fatalError];
+}
+
+function pointerCaptureObservedElements(): HTMLElement[] {
+  return [app, petDragHandle, stateChip, stateBubble, settingsPanel, onboardingPanel, fatalError];
+}
+
+async function syncPointerCaptureRegions(): Promise<void> {
+  const regions = [
+    ...petImageCaptureRegions(petImage, petDragHandle, window.devicePixelRatio),
+    ...pointerCaptureRegions(pointerCaptureElements(), window.devicePixelRatio),
+  ];
+  if (regions.length > 0) {
+    await setPointerCaptureRegions(regions);
+  }
+}
+
+function installPointerCaptureRegionSync(): () => void {
+  let animationFrame: number | null = null;
+  const schedule = (): void => {
+    if (animationFrame !== null) {
+      return;
+    }
+    animationFrame = window.requestAnimationFrame(() => {
+      animationFrame = null;
+      void syncPointerCaptureRegions().catch((error) =>
+        reportSettingsError(error, t("pointerRegionsFailed")),
+      );
+    });
+  };
+  const resizeObserver = new ResizeObserver(schedule);
+  const mutationObserver = new MutationObserver(schedule);
+  for (const element of pointerCaptureObservedElements()) {
+    resizeObserver.observe(element);
+    mutationObserver.observe(element, { attributes: true, attributeFilter: ["hidden"] });
+  }
+  window.addEventListener("resize", schedule);
+  petImage.addEventListener("load", schedule);
+  return () => {
+    if (animationFrame !== null) {
+      window.cancelAnimationFrame(animationFrame);
+    }
+    resizeObserver.disconnect();
+    mutationObserver.disconnect();
+    window.removeEventListener("resize", schedule);
+    petImage.removeEventListener("load", schedule);
+  };
 }
 
 function beginPetHover(): void {
@@ -500,13 +595,46 @@ function endPetHover(): void {
   }
 }
 
+function handlePointerCaptureLeave(): void {
+  app.dataset.pointerOutside = "true";
+  endPetHover();
+  bubble.handleNativePointerLeave();
+}
+
 async function dragPet(): Promise<void> {
   const interactionToken = petInteractionController.begin("dragging");
+  nativePetDragInProgress = true;
   try {
-    await startWindowDrag();
+    const result = await startWindowDrag(CLICK_GESTURE_MAX_DURATION_MS);
+    if (result.native) {
+      suppressNextNativeClick = true;
+      petPointerDownAtMs = null;
+      const recognizedAsClick = isPetNativeClickGesture(
+        result.releasedWithinTimeout,
+        result.deltaX,
+        result.deltaY,
+        CLICK_GESTURE_MAX_MOVEMENT_PX,
+      );
+      app.dataset.lastPointerGesture = JSON.stringify({ ...result, recognizedAsClick });
+      if (recognizedAsClick) {
+        triggerPetClick();
+      }
+    }
   } finally {
+    nativePetDragInProgress = false;
     petInteractionController.end(interactionToken);
   }
+}
+
+function triggerPetClick(): void {
+  timedPetInteraction.trigger(
+    "clicked",
+    resolvePetInteractionDurationMs(
+      petPackage,
+      "clicked",
+      CLICK_INTERACTION_DURATION_MS,
+    ),
+  );
 }
 
 async function requestApplicationExit(): Promise<void> {
@@ -515,7 +643,7 @@ async function requestApplicationExit(): Promise<void> {
   try {
     await quitApplication();
   } catch (error) {
-    settingsActionError.textContent = `无法退出应用：${describeError(error)}`;
+    settingsActionError.textContent = `${t("quitFailed")}：${describeError(error, t("unknownError"))}`;
     settingsActionError.hidden = false;
   }
 }
@@ -529,6 +657,60 @@ function populateOnboardingContent(): void {
   requiredElement<HTMLElement>("#npm-cache-command").textContent = NPM_CACHE_VERIFY_COMMAND;
 }
 
+function applyLanguagePresentation(): void {
+  document.documentElement.lang = settings.language;
+  for (const element of document.querySelectorAll<HTMLElement>("[data-i18n]")) {
+    element.textContent = t(element.dataset.i18n as TranslationKey);
+  }
+  for (const [attribute, datasetKey] of [
+    ["aria-label", "i18nAriaLabel"],
+    ["title", "i18nTitle"],
+    ["alt", "i18nAlt"],
+    ["content", "i18nContent"],
+  ] as const) {
+    for (const element of document.querySelectorAll<HTMLElement>(`[data-i18n-${attribute}]`)) {
+      const key = element.dataset[datasetKey] as TranslationKey | undefined;
+      if (key) {
+        element.setAttribute(attribute, t(key));
+      }
+    }
+  }
+
+  const copyTargets: Record<string, TranslationKey> = {
+    "codex-mcp-command": "copyCodexCommand",
+    "agent-mcp-config": "copyMcpConfig",
+    "node-npm-check-command": "copyNodeCheck",
+    "mcp-run-command": "copyMcpTest",
+    "npm-cache-command": "copyNpmCache",
+    "manual-mcp-config": "copyManualConfig",
+  };
+  for (const button of document.querySelectorAll<HTMLButtonElement>("[data-copy-target]")) {
+    resetCopyButtonFeedback(button, t("copy"));
+    const key = button.dataset.copyTarget ? copyTargets[button.dataset.copyTarget] : undefined;
+    button.dataset.copyLabel = key ? t(key) : t("content");
+  }
+  const fullCopyButton = requiredElement<HTMLButtonElement>("#copy-agent-prompt");
+  resetCopyButtonFeedback(fullCopyButton, t("copyInstruction"));
+  bubble.setLanguage(settings.language);
+  populateOnboardingContent();
+
+  if (hasRenderedState) {
+    renderState(currentEvent, false);
+    populatePetPackageControls();
+    populateStateAnimationControls();
+    if (latestRuntimeSnapshot) {
+      renderConnection(latestRuntimeSnapshot);
+    }
+  }
+}
+
+function t(
+  key: TranslationKey,
+  parameters: Record<string, string | number> = {},
+): string {
+  return translate(settings.language, key, parameters);
+}
+
 async function copyOnboardingText(
   value: string,
   label: string,
@@ -536,19 +718,25 @@ async function copyOnboardingText(
 ): Promise<void> {
   try {
     await navigator.clipboard.writeText(value);
-    copyAgentPromptStatus.textContent = `已复制${label}。`;
-    showCopyButtonFeedback(button, "success");
+    copyAgentPromptStatus.textContent = t("copiedStatus", { label });
+    showCopyButtonFeedback(button, "success", copyFeedbackLabels());
   } catch (error) {
-    copyAgentPromptStatus.textContent = `复制失败：${describeError(error)}。请手动选择对应内容复制。`;
-    showCopyButtonFeedback(button, "error");
+    copyAgentPromptStatus.textContent = t("copyFailedStatus", {
+      error: describeError(error),
+    });
+    showCopyButtonFeedback(button, "error", copyFeedbackLabels());
   }
+}
+
+function copyFeedbackLabels(): { success: string; error: string; fallback: string } {
+  return { success: t("copied"), error: t("copyFailed"), fallback: t("copy") };
 }
 
 function populatePetPackageControls(): void {
   petPackageInput.replaceChildren(
     ...petCatalog.packages.map(({ catalogId, manifest, source }) => {
       const option = new Option(
-        petPackageOptionLabel(manifest.name, manifest.version, source),
+        petPackageOptionLabel(manifest.name, manifest.version, source, settings.language),
         catalogId,
       );
       option.title = `${manifest.author} · ${manifest.license}`;
@@ -558,11 +746,12 @@ function populatePetPackageControls(): void {
   petPackageInput.value = petPackage.catalogId;
   removePetPackageButton.disabled = petPackage.source !== "imported";
   removePetPackageButton.title =
-    petPackage.source === "imported" ? "删除当前本地资源包" : "内置资源包不能删除";
+    petPackage.source === "imported" ? t("removeImportedTitle") : t("bundledCannotRemove");
   if (petCatalog.warnings.length > 0) {
-    petPackageError.textContent = `已跳过 ${petCatalog.warnings.length} 个无效资源包：${petCatalog.warnings
-      .map(({ packageId }) => packageId)
-      .join("、")}`;
+    petPackageError.textContent = t("importedInvalidPackages", {
+      count: petCatalog.warnings.length,
+      ids: petCatalog.warnings.map(({ packageId }) => packageId).join(", "),
+    });
     petPackageError.hidden = false;
   }
 }
@@ -579,9 +768,12 @@ function populateStateAnimationControls(previewState: AgentState = currentEvent.
         className: "state-action-card",
         state,
         animationOverride,
-        title: STATE_PRESENTATION[state].label,
+        title: localizedStateLabel(settings.language, state),
         subtitle: resolved.id,
-        ariaLabel: `选择${STATE_PRESENTATION[state].label}状态动作，当前为${resolved.id}`,
+        ariaLabel: t("chooseStateAction", {
+          state: localizedStateLabel(settings.language, state),
+          animation: resolved.id,
+        }),
         onActivate: () => toggleAnimationChoices(item, state, choiceGrid),
       });
       item.className = "state-action-item";
@@ -642,7 +834,7 @@ function createActionCard({
   const fallback = new URL("pets/fallback-idle.svg", document.baseURI).href;
   const resolved = resolvePetAnimation(petPackage, state, animationOverride || undefined);
   placeholder.src = fallback;
-  placeholder.alt = `${title}动作预览`;
+  placeholder.alt = t("actionPreviewAlt", { state: title });
   placeholder.draggable = false;
   copy.className = "action-card-copy";
   heading.textContent = title;
@@ -701,7 +893,7 @@ function toggleAnimationChoices(
   const candidates = [
     {
       animationOverride: "",
-      title: "跟随资源包",
+      title: t("followPackage"),
       animationId: petPackage.manifest.states[state],
     },
     ...petPackage.manifest.stateAnimationChoices[state]
@@ -720,7 +912,10 @@ function toggleAnimationChoices(
         animationOverride,
         title,
         subtitle: animationOverride ? undefined : animationId,
-        ariaLabel: `将${STATE_PRESENTATION[state].label}状态设置为${title}`,
+        ariaLabel: t("setStateAction", {
+          state: localizedStateLabel(settings.language, state),
+          action: title,
+        }),
         onActivate: () => selectStateAnimation(state, animationOverride),
       });
       card.dataset.animation = animationId;
@@ -791,7 +986,7 @@ async function changePetPackage(packageId: string): Promise<void> {
     await persistSettings(settings);
     populatePetPackageControls();
   } catch (error) {
-    petPackageError.textContent = `无法切换资源包：${describeError(error)}`;
+    petPackageError.textContent = `${t("switchPackageFailed")}：${describeError(error, t("unknownError"))}`;
     petPackageError.hidden = false;
   } finally {
     petPackageInput.value = petPackage.catalogId;
@@ -802,11 +997,11 @@ async function changePetPackage(packageId: string): Promise<void> {
 async function importLocalPetPackage(): Promise<void> {
   setPetPackageBusy(true);
   petPackageError.hidden = true;
-  setPetPackageStatus("正在验证并复制资源包…");
+  setPetPackageStatus(t("validatingPackage"));
   try {
     const importedPackage = await importPetPackage();
     if (!importedPackage) {
-      setPetPackageStatus("已取消导入。");
+      setPetPackageStatus(t("importCancelled"));
       return;
     }
 
@@ -820,11 +1015,9 @@ async function importLocalPetPackage(): Promise<void> {
     }
     populatePetPackageControls();
     await changePetPackage(importedPackage.catalogId);
-    setPetPackageStatus(
-      `已导入“${importedPackage.manifest.name}”，原始目录现在可以移动或删除。`,
-    );
+    setPetPackageStatus(t("importedPackage", { name: importedPackage.manifest.name }));
   } catch (error) {
-    petPackageError.textContent = `无法导入资源包：${describeError(error)}`;
+    petPackageError.textContent = `${t("importPackageFailed")}：${describeError(error, t("unknownError"))}`;
     petPackageError.hidden = false;
     setPetPackageStatus("", true);
   } finally {
@@ -840,7 +1033,7 @@ async function removeCurrentPetPackage(): Promise<void> {
   const packageToRemove = petPackage;
   setPetPackageBusy(true);
   petPackageError.hidden = true;
-  setPetPackageStatus(`正在删除“${packageToRemove.manifest.name}”…`);
+  setPetPackageStatus(t("deletingPackage", { name: packageToRemove.manifest.name }));
   try {
     const fallbackPackage = selectPetPackage(petCatalog);
     await changePetPackage(fallbackPackage.catalogId);
@@ -850,9 +1043,9 @@ async function removeCurrentPetPackage(): Promise<void> {
       ({ catalogId }) => catalogId !== packageToRemove.catalogId,
     );
     populatePetPackageControls();
-    setPetPackageStatus(`已删除“${packageToRemove.manifest.name}”。`);
+    setPetPackageStatus(t("deletedPackage", { name: packageToRemove.manifest.name }));
   } catch (error) {
-    petPackageError.textContent = `无法删除资源包：${describeError(error)}`;
+    petPackageError.textContent = `${t("removePackageFailed")}：${describeError(error, t("unknownError"))}`;
     petPackageError.hidden = false;
     setPetPackageStatus("", true);
   } finally {
@@ -941,6 +1134,7 @@ async function resetSettings(): Promise<void> {
   settings.petPackageId = petPackage.catalogId;
   petRenderer.setPackage(petPackage);
   actionPreviewRenderer.setPackage(petPackage);
+  applyLanguagePresentation();
   populatePetPackageControls();
   populateStateAnimationControls();
   applyPetPackagePresentation();
@@ -964,6 +1158,7 @@ function applySettingsPresentation(nextSettings: AppSettings): void {
   app.style.setProperty("--pet-opacity", String(nextSettings.opacity));
   requiredElement<HTMLInputElement>("#scale-input").value = String(scalePercent);
   requiredElement<HTMLInputElement>("#opacity-input").value = String(opacityPercent);
+  requiredElement<HTMLSelectElement>("#language-input").value = nextSettings.language;
   requiredElement<HTMLOutputElement>("#scale-output").value = `${scalePercent}%`;
   requiredElement<HTMLOutputElement>("#opacity-output").value = `${opacityPercent}%`;
   requiredElement<HTMLInputElement>("#always-on-top-input").checked = nextSettings.alwaysOnTop;
@@ -1007,14 +1202,14 @@ function enqueueSettingsWrite<T>(operation: () => Promise<T>): Promise<T> {
   return result;
 }
 
-function runSettingsOperation(operation: Promise<unknown>, failurePrefix = "无法应用设置"): void {
+function runSettingsOperation(operation: Promise<unknown>, failurePrefix = t("applySettingsFailed")): void {
   settingsActionError.hidden = true;
   settingsActionError.textContent = "";
   void operation.catch((error) => reportSettingsError(error, failurePrefix));
 }
 
-function reportSettingsError(error: unknown, failurePrefix = "无法应用设置"): void {
-  settingsActionError.textContent = `${failurePrefix}：${describeError(error)}`;
+function reportSettingsError(error: unknown, failurePrefix = t("applySettingsFailed")): void {
+  settingsActionError.textContent = `${failurePrefix}：${describeError(error, t("unknownError"))}`;
   settingsActionError.hidden = false;
 }
 
@@ -1059,18 +1254,19 @@ function sidePanelOpen(): boolean {
 
 async function applyWindowLayout(scale: number): Promise<void> {
   app.dataset.sidePanelPlacement = await resizeWindowForScale(scale, sidePanelOpen());
+  await syncPointerCaptureRegions();
 }
 
 function syncWindowLayout(): void {
   runSettingsOperation(
     applyWindowLayout(settings.scale),
-    "无法调整侧栏窗口",
+    t("resizePanelFailed"),
   );
 }
 
 function showFatalError(error: unknown): void {
-  const message = describeError(error, "应用初始化失败");
-  fatalError.textContent = `无法启动桌宠：${message}`;
+  const message = describeError(error, t("initializeFailed"));
+  fatalError.textContent = `${t("startPetFailed")}：${message}`;
   fatalError.hidden = false;
 }
 

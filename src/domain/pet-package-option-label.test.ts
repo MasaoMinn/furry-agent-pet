@@ -14,4 +14,10 @@ describe("petPackageOptionLabel", () => {
       "本地 · Custom Pet · v1.2.3",
     );
   });
+
+  it("localizes imported package origin details in English", () => {
+    expect(petPackageOptionLabel("Custom Pet", "1.2.3", "imported", "en")).toBe(
+      "Local · Custom Pet · v1.2.3",
+    );
+  });
 });

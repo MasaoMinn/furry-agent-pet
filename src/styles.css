@@ -115,6 +115,16 @@ button {
   transition-delay: 0s;
 }
 
+.pet-stage[data-pointer-outside="true"] .settings-toggle:not([aria-expanded="true"]) {
+  width: 0;
+  margin-left: -5px;
+  border-width: 0;
+  opacity: 0;
+  visibility: hidden;
+  transform: scale(0.82);
+  pointer-events: none;
+}
+
 .settings-toggle > span {
   font-size: 12px;
   line-height: 1;
@@ -311,6 +321,64 @@ button {
   border-color: rgb(74 210 144 / 62%);
   box-shadow: 0 0 0 12px rgb(255 211 74 / 12%), 0 0 0 25px rgb(74 210 144 / 8%);
   animation: celebrate-ring 1.35s ease-out infinite;
+}
+
+.click-hearts {
+  position: absolute;
+  z-index: 3;
+  left: 50%;
+  top: 42%;
+  width: 118px;
+  height: 86px;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+}
+
+.click-heart {
+  --heart-x: 0px;
+  --heart-y: -48px;
+  --heart-rotation: 0deg;
+  position: absolute;
+  left: calc(50% - 9px);
+  bottom: 0;
+  color: #ff6f91;
+  font-size: 22px;
+  line-height: 1;
+  opacity: 0;
+  filter: drop-shadow(0 2px 3px rgb(137 40 73 / 24%));
+}
+
+.click-heart:nth-child(1) {
+  --heart-x: -38px;
+  --heart-y: -45px;
+  --heart-rotation: -14deg;
+  color: #ff82a0;
+}
+
+.click-heart:nth-child(2) {
+  --heart-x: 0px;
+  --heart-y: -62px;
+  --heart-rotation: 8deg;
+  font-size: 25px;
+}
+
+.click-heart:nth-child(3) {
+  --heart-x: 37px;
+  --heart-y: -42px;
+  --heart-rotation: 16deg;
+  color: #ff9aae;
+}
+
+.pet-stage[data-action="clicked"] .click-heart {
+  animation: click-heart-float 620ms cubic-bezier(0.2, 0.75, 0.3, 1) both;
+}
+
+.pet-stage[data-action="clicked"] .click-heart:nth-child(2) {
+  animation-delay: 45ms;
+}
+
+.pet-stage[data-action="clicked"] .click-heart:nth-child(3) {
+  animation-delay: 90ms;
 }
 
 .pet-stage[data-state="success"] .pet-image {
@@ -1056,6 +1124,22 @@ input[type="range"] {
   }
 }
 
+@keyframes click-heart-float {
+  0% {
+    opacity: 0;
+    transform: translate(0, 8px) rotate(0deg) scale(0.55);
+  }
+
+  24% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(var(--heart-x), var(--heart-y)) rotate(var(--heart-rotation)) scale(1.08);
+  }
+}
+
 html[data-reduced-motion="true"] *,
 html[data-reduced-motion="true"] *::before,
 html[data-reduced-motion="true"] *::after {
@@ -1077,6 +1161,12 @@ html[data-reduced-motion="true"] .pet-stage[data-action-fallback="clicked"] .pet
 html[data-reduced-motion="true"] .celebration {
   animation: none !important;
   opacity: 0;
+}
+
+html[data-reduced-motion="true"] .pet-stage[data-action="clicked"] .click-heart {
+  animation: none !important;
+  opacity: 0.9;
+  transform: translate(0, -14px) scale(0.9);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1101,5 +1191,12 @@ html[data-reduced-motion="true"] .celebration {
   .celebration {
     animation: none !important;
     opacity: 0;
+  }
+
+
+  .pet-stage[data-action="clicked"] .click-heart {
+    animation: none !important;
+    opacity: 0.9;
+    transform: translate(0, -14px) scale(0.9);
   }
 }

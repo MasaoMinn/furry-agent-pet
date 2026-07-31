@@ -16,6 +16,7 @@ const AGENT_STATES: [&str; 7] = [
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
+    language: String,
     scale: f64,
     opacity: f64,
     always_on_top: bool,
@@ -30,6 +31,7 @@ pub struct AppSettings {
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
+            language: "zh-CN".to_owned(),
             scale: 1.0,
             opacity: 1.0,
             always_on_top: true,
@@ -49,6 +51,7 @@ impl AppSettings {
         let object = value.and_then(Value::as_object);
 
         Self {
+            language: language(object).unwrap_or(defaults.language),
             scale: bounded_number(object, "scale", 0.5, 2.0, defaults.scale),
             opacity: bounded_number(object, "opacity", 0.3, 1.0, defaults.opacity),
             always_on_top: boolean(object, "alwaysOnTop", defaults.always_on_top),
@@ -166,6 +169,11 @@ fn package_id(object: Option<&Map<String, Value>>) -> Option<String> {
     valid_identifier(&value).then_some(value)
 }
 
+fn language(object: Option<&Map<String, Value>>) -> Option<String> {
+    let value = bounded_trimmed_string(object, "language", 5)?;
+    matches!(value.as_str(), "zh-CN" | "en").then_some(value)
+}
+
 fn state_animation_overrides(object: Option<&Map<String, Value>>) -> BTreeMap<String, String> {
     let Some(overrides) = object
         .and_then(|object| object.get("stateAnimationOverrides"))
@@ -259,7 +267,8 @@ mod tests {
         let value = serde_json::to_value(AppSettings::default()).expect("serialize defaults");
         let object = value.as_object().expect("settings object");
 
-        assert_eq!(object.len(), 9);
+        assert_eq!(object.len(), 10);
+        assert_eq!(object.get("language"), Some(&json!("zh-CN")));
         assert_eq!(object.get("launchAtStartup"), Some(&json!(false)));
         assert_eq!(object.get("petPackageId"), Some(&json!("furry-ai-state")));
         assert!(!object.contains_key("reduceMotion"));

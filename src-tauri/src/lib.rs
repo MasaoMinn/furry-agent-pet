@@ -1,5 +1,8 @@
 mod ipc;
 mod pet_packages;
+mod pointer_gesture;
+#[cfg(windows)]
+mod pointer_regions;
 mod protocol;
 mod settings;
 mod state_normalizer;
@@ -54,6 +57,9 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             ipc::install(app);
+            if let Some(window) = app.get_webview_window("main") {
+                pointer_regions::install(&window).map_err(std::io::Error::other)?;
+            }
             let tray_available = match tray::setup(app.handle()) {
                 Ok(()) => true,
                 Err(error) => {
@@ -78,6 +84,8 @@ pub fn run() {
             pet_packages::list_imported_pet_packages,
             pet_packages::import_pet_package,
             pet_packages::remove_imported_pet_package,
+            pointer_gesture::start_tracked_window_drag,
+            pointer_regions::set_pointer_capture_regions,
             settings::load_app_settings,
             settings::save_app_settings,
             settings::reset_app_settings,
@@ -86,10 +94,11 @@ pub fn run() {
         ])
         .on_window_event(|window, event| {
             if window.label() == "main" {
-                if matches!(
+                if matches!(event, WindowEvent::Moved(_)) {
+                    let _ = window_recovery::constrain_native_window_to_work_areas(window);
+                } else if matches!(
                     event,
-                    WindowEvent::Moved(_)
-                        | WindowEvent::Resized(_)
+                    WindowEvent::Resized(_)
                         | WindowEvent::ScaleFactorChanged { .. }
                         | WindowEvent::Focused(true)
                 ) {

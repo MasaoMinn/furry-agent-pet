@@ -1,8 +1,10 @@
 import { AGENT_STATES, type AgentState } from "./agent-state";
+import { normalizeLanguage, type AppLanguage } from "./i18n";
 
 export const CURRENT_ONBOARDING_VERSION = 2;
 
 export interface AppSettings {
+  language: AppLanguage;
   scale: number;
   opacity: number;
   alwaysOnTop: boolean;
@@ -15,6 +17,7 @@ export interface AppSettings {
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
+  language: "zh-CN",
   scale: 1,
   opacity: 1,
   alwaysOnTop: true,
@@ -30,6 +33,7 @@ export function normalizeSettings(value: unknown): AppSettings {
   const candidate = isRecord(value) ? value : {};
 
   return {
+    language: normalizeLanguage(candidate.language),
     scale: clampNumber(candidate.scale, 0.5, 2, DEFAULT_SETTINGS.scale),
     opacity: clampNumber(candidate.opacity, 0.3, 1, DEFAULT_SETTINGS.opacity),
     alwaysOnTop: booleanOr(candidate.alwaysOnTop, DEFAULT_SETTINGS.alwaysOnTop),

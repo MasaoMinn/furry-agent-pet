@@ -1,6 +1,10 @@
 use tauri::{Monitor, PhysicalPosition, PhysicalSize, Runtime, WebviewWindow, Window};
 
 const SAFE_MARGIN_LOGICAL_PX: f64 = 16.0;
+// The default pet image has 37 logical pixels of horizontal transparent
+// padding inside the native window. Allow almost that padding to cross an
+// outer edge, while keeping the visible pet and controls on-screen.
+const MAX_EDGE_OVERFLOW_LOGICAL_PX: f64 = 36.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Rect {
@@ -31,6 +35,14 @@ impl Rect {
             && i64::from(self.y) < other.bottom()
             && self.bottom() > i64::from(other.y)
     }
+
+    fn intersection_area(self, other: Self) -> u128 {
+        let width = (self.right().min(other.right()) - i64::from(self.x).max(i64::from(other.x)))
+            .max(0) as u128;
+        let height = (self.bottom().min(other.bottom()) - i64::from(self.y).max(i64::from(other.y)))
+            .max(0) as u128;
+        width * height
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -52,6 +64,19 @@ pub fn recover_if_offscreen<R: Runtime>(window: &WebviewWindow<R>) -> tauri::Res
 
 pub fn recover_native_window_if_offscreen<R: Runtime>(window: &Window<R>) -> tauri::Result<bool> {
     recover_window(window)
+}
+
+/// Keeps a moved window reachable within the available monitor work areas.
+///
+/// Adjacent monitors are treated as one continuous surface, so a window may
+/// straddle their shared edge while it is being dragged. A bounded portion may
+/// also extend beyond an outer edge so the pet can be docked where the pointer
+/// can actually reach, while only the window's transparent edge padding may
+/// leave the work area.
+pub fn constrain_native_window_to_work_areas<R: Runtime>(
+    window: &Window<R>,
+) -> tauri::Result<bool> {
+    constrain_window(window)
 }
 
 trait WindowMonitorApi {
@@ -149,6 +174,47 @@ fn recover_window<W: WindowMonitorApi>(window: &W) -> tauri::Result<bool> {
     Ok(true)
 }
 
+fn constrain_window<W: WindowMonitorApi>(window: &W) -> tauri::Result<bool> {
+    let position = window.outer_position()?;
+    let size = window.outer_size()?;
+    if size.width == 0 || size.height == 0 {
+        return Ok(false);
+    }
+
+    let primary = window.primary_monitor().ok().flatten();
+    let monitors = match window.available_monitors() {
+        Ok(monitors) if !monitors.is_empty() => monitors,
+        Ok(_) => primary.iter().cloned().collect(),
+        Err(error) => match primary.as_ref() {
+            Some(primary) => vec![primary.clone()],
+            None => return Err(error),
+        },
+    };
+    let displays: Vec<_> = monitors
+        .iter()
+        .map(|monitor| DisplayGeometry {
+            bounds: monitor_bounds(monitor),
+            work_area: monitor_work_area(monitor),
+            scale_factor: monitor.scale_factor(),
+            is_primary: primary
+                .as_ref()
+                .is_some_and(|primary| same_monitor(monitor, primary)),
+        })
+        .collect();
+    let window_rect = Rect {
+        x: position.x,
+        y: position.y,
+        width: size.width,
+        height: size.height,
+    };
+
+    let Some(position) = containment_position(window_rect, &displays) else {
+        return Ok(false);
+    };
+    window.set_physical_position(PhysicalPosition::new(position.0, position.1))?;
+    Ok(true)
+}
+
 fn monitor_bounds(monitor: &Monitor) -> Rect {
     Rect {
         x: monitor.position().x,
@@ -212,6 +278,148 @@ fn recovery_position(window: Rect, displays: &[DisplayGeometry]) -> Option<(i32,
             margin,
         ),
     ))
+}
+
+fn containment_position(window: Rect, displays: &[DisplayGeometry]) -> Option<(i32, i32)> {
+    if displays.is_empty() {
+        return None;
+    }
+    if rect_fully_covered(window, displays.iter().map(|display| display.work_area))
+        || displays
+            .iter()
+            .any(|display| window_fits_edge_allowance(window, *display))
+    {
+        return None;
+    }
+
+    let target = displays
+        .iter()
+        .filter(|display| window.intersection_area(display.work_area) > 0)
+        .max_by_key(|display| {
+            (
+                window.intersection_area(display.work_area),
+                u8::from(display.is_primary),
+            )
+        })
+        .or_else(|| {
+            displays.iter().min_by_key(|display| {
+                (
+                    rect_distance_squared(window, display.bounds),
+                    u8::from(!display.is_primary),
+                )
+            })
+        })?;
+
+    Some((
+        fit_axis_with_overflow(
+            window.x,
+            window.width,
+            target.work_area.x,
+            target.work_area.width,
+            scaled_edge_overflow(target.scale_factor),
+        ),
+        fit_axis_with_overflow(
+            window.y,
+            window.height,
+            target.work_area.y,
+            target.work_area.height,
+            scaled_edge_overflow(target.scale_factor),
+        ),
+    ))
+}
+
+fn window_fits_edge_allowance(window: Rect, display: DisplayGeometry) -> bool {
+    let overflow = i64::from(scaled_edge_overflow(display.scale_factor));
+    i64::from(window.x) >= i64::from(display.work_area.x) - overflow
+        && window.right() <= display.work_area.right() + overflow
+        && i64::from(window.y) >= i64::from(display.work_area.y) - overflow
+        && window.bottom() <= display.work_area.bottom() + overflow
+}
+
+fn scaled_edge_overflow(scale_factor: f64) -> u32 {
+    let scale_factor = if scale_factor.is_finite() && scale_factor > 0.0 {
+        scale_factor
+    } else {
+        1.0
+    };
+    (MAX_EDGE_OVERFLOW_LOGICAL_PX * scale_factor)
+        .round()
+        .clamp(1.0, 512.0) as u32
+}
+
+fn fit_axis_with_overflow(
+    current: i32,
+    window_length: u32,
+    work_start: i32,
+    work_length: u32,
+    requested_overflow: u32,
+) -> i32 {
+    let start = i64::from(work_start);
+    let window_length = i64::from(window_length);
+    let work_length = i64::from(work_length);
+    let overflow = i64::from(requested_overflow).min(work_length / 2);
+    let minimum = start - overflow;
+    let maximum = start + work_length - window_length + overflow;
+    let fitted = if maximum >= minimum {
+        i64::from(current).clamp(minimum, maximum)
+    } else {
+        start + (work_length - window_length) / 2
+    };
+    fitted.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32
+}
+
+fn rect_fully_covered(rect: Rect, covers: impl Iterator<Item = Rect>) -> bool {
+    if !rect.has_area() {
+        return false;
+    }
+    let covers: Vec<_> = covers.filter(|cover| rect.intersects(*cover)).collect();
+    if covers.is_empty() {
+        return false;
+    }
+
+    let left = i64::from(rect.x);
+    let right = rect.right();
+    let top = i64::from(rect.y);
+    let bottom = rect.bottom();
+    let mut x_edges = vec![left, right];
+    for cover in &covers {
+        x_edges.push(i64::from(cover.x).clamp(left, right));
+        x_edges.push(cover.right().clamp(left, right));
+    }
+    x_edges.sort_unstable();
+    x_edges.dedup();
+
+    x_edges.windows(2).all(|slice| {
+        let x_start = slice[0];
+        let x_end = slice[1];
+        if x_start == x_end {
+            return true;
+        }
+        let mut intervals: Vec<_> = covers
+            .iter()
+            .filter(|cover| i64::from(cover.x) <= x_start && cover.right() >= x_end)
+            .map(|cover| {
+                (
+                    i64::from(cover.y).clamp(top, bottom),
+                    cover.bottom().clamp(top, bottom),
+                )
+            })
+            .filter(|(start, end)| start < end)
+            .collect();
+        intervals.sort_unstable();
+
+        let mut covered_until = top;
+        for (start, end) in intervals {
+            if start > covered_until {
+                return false;
+            }
+            covered_until = covered_until.max(end);
+            if covered_until >= bottom {
+                return true;
+            }
+        }
+        false
+    })
 }
 
 fn rect_distance_squared(left: Rect, right: Rect) -> i128 {
@@ -385,6 +593,68 @@ mod tests {
         assert_eq!(
             recovery_position(rect(300, 300, 400, 300), &[tiny]),
             Some((-100, -100))
+        );
+    }
+
+    #[test]
+    fn constrains_each_outer_work_area_edge() {
+        let monitor = display(rect(0, 0, 1920, 1080), rect(0, 0, 1920, 1040), true);
+
+        assert_eq!(
+            containment_position(rect(-300, 120, 360, 440), &[monitor]),
+            Some((-36, 120))
+        );
+        assert_eq!(
+            containment_position(rect(1870, 120, 360, 440), &[monitor]),
+            Some((1596, 120))
+        );
+        assert_eq!(
+            containment_position(rect(120, -400, 360, 440), &[monitor]),
+            Some((120, -36))
+        );
+        assert_eq!(
+            containment_position(rect(120, 990, 360, 440), &[monitor]),
+            Some((120, 636))
+        );
+    }
+
+    #[test]
+    fn allows_only_transparent_padding_to_cross_an_outer_edge() {
+        let monitor = display(rect(0, 0, 1920, 1080), rect(0, 0, 1920, 1040), true);
+
+        assert_eq!(
+            containment_position(rect(-36, -36, 360, 440), &[monitor]),
+            None
+        );
+        assert_eq!(
+            containment_position(rect(1596, 636, 360, 440), &[monitor]),
+            None
+        );
+    }
+
+    #[test]
+    fn allows_a_window_to_cross_a_shared_monitor_edge() {
+        let left = display(rect(0, 0, 1920, 1080), rect(0, 0, 1920, 1040), true);
+        let right = display(rect(1920, 0, 2560, 1440), rect(1920, 0, 2560, 1400), false);
+
+        assert_eq!(
+            containment_position(rect(1760, 120, 360, 440), &[left, right]),
+            None
+        );
+    }
+
+    #[test]
+    fn rejects_a_gap_between_monitor_work_areas() {
+        let left = display(rect(0, 0, 1000, 1000), rect(0, 0, 1000, 900), true);
+        let right = display(
+            rect(1000, 100, 1000, 1000),
+            rect(1000, 100, 1000, 900),
+            false,
+        );
+
+        assert_eq!(
+            containment_position(rect(900, 20, 300, 200), &[left, right]),
+            Some((964, 64))
         );
     }
 }

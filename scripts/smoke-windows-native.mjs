@@ -272,7 +272,19 @@ try {
     document.getSelection()?.removeAllRanges();
     return true;
   })()`);
-  await waitForCdp(() => stateSnapshot(), (value) => value.bubbleHidden, 16_500, "fixed 15-second success bubble auto-hide");
+  const beforeBubbleAutoHide = queryTrackedWindow(app.child);
+  const bubbleAutoHideScreen = await cdp.evaluate(`(() => ({
+    left: Math.round(window.screen.availLeft * window.devicePixelRatio),
+    top: Math.round(window.screen.availTop * window.devicePixelRatio),
+  }))()`);
+  runTrackedWindowAction(app.child, "move", {
+    point: { x: bubbleAutoHideScreen.left + 8, y: bubbleAutoHideScreen.top + 8 },
+  });
+  try {
+    await waitForCdp(() => stateSnapshot(), (value) => value.bubbleHidden, 16_500, "fixed 15-second success bubble auto-hide");
+  } finally {
+    runTrackedWindowAction(app.child, "move", { point: beforeBubbleAutoHide.cursor });
+  }
   await cdp.evaluate(`document.querySelector('#pet-drag-handle').dispatchEvent(
     new PointerEvent('pointerenter', { pointerType: 'mouse' })
   )`);
@@ -481,7 +493,7 @@ try {
       "visible=true persistence, and isolated cleanup",
   );
   console.log(
-    "PASS Rust-owned settings persistence, Windows autostart enable/disable, retired-key migration, and 9-key on-disk schema",
+    "PASS Rust-owned settings persistence, Windows autostart enable/disable, retired-key migration, and 10-key on-disk schema",
   );
   console.log(
     "PASS first-run onboarding: defer, settings reopen, re-detect, completion persistence, and restart",
@@ -656,8 +668,8 @@ async function verifyOnboardingIntegration(mockProcess) {
     "first-run onboarding dialog",
   );
   assert(
-    report.actions.initial.prompt.includes("方法 1：发送指令给代理") &&
-      report.actions.initial.prompt.includes("方法 2：手动配置 MCP") &&
+    report.actions.initial.content.includes("方法 1：发送指令给代理") &&
+      report.actions.initial.content.includes("方法 2：手动配置 MCP") &&
       report.actions.initial.prompt.includes("codex mcp add furry_companion -- npx -y furry-companion-mcp") &&
       report.actions.initial.prompt.includes("MCP tools 中是否出现 set_state"),
     "onboarding omitted one of the requested MCP setup methods",
@@ -665,7 +677,7 @@ async function verifyOnboardingIntegration(mockProcess) {
   assert(
     report.actions.initial.prompt.includes("node -v && npm -v") &&
       report.actions.initial.prompt.includes("npm cache verify") &&
-      report.actions.initial.prompt.includes("当前代理会话通常无法热加载新添加的 MCP 工具"),
+      report.actions.initial.content.includes("当前代理会话通常无法热加载新添加的 MCP 工具"),
     "onboarding omitted the requested troubleshooting or restart guidance",
   );
   await cdp.evaluate(`(() => {
@@ -1292,20 +1304,47 @@ async function verifyWindowsDesktopIntegration(child) {
     !dragInteraction.history.some((entry) => entry.action === "clicked"),
     "native drag incorrectly triggered the bounded clicked interaction",
   );
-  await cdp.evaluate("document.querySelector('#pet-drag-handle')?.click(); true");
-  const clickedActive = await waitForCdp(
-    () => cdp.evaluate(`(() => ({
+  const clickWindow = queryTrackedWindow(child);
+  runTrackedWindowAction(child, "click", {
+    point: {
+      x: Math.round(
+        clickWindow.clientOrigin.x +
+          (css.dragHandle.left + css.dragHandle.width / 2) * css.devicePixelRatio,
+      ),
+      y: Math.round(
+        clickWindow.clientOrigin.y +
+          (css.dragHandle.top + css.dragHandle.height / 2) * css.devicePixelRatio,
+      ),
+    },
+  });
+  let lastClickedSnapshot;
+  let clickedActive;
+  try {
+    clickedActive = await waitForCdp(
+      async () => {
+        lastClickedSnapshot = await cdp.evaluate(`(() => ({
       currentAction: document.querySelector('#app')?.getAttribute('data-action') ?? null,
       fallbackAction: document.querySelector('#app')?.getAttribute('data-action-fallback') ?? null,
       animationName: getComputedStyle(document.querySelector('#pet-image')).animationName,
+      heartAnimationNames: [...document.querySelectorAll('.click-heart')]
+        .map((heart) => getComputedStyle(heart).animationName),
+      pointerGesture: document.querySelector('#app')?.getAttribute('data-last-pointer-gesture') ?? null,
+      settingsError: document.querySelector('#settings-action-error')?.textContent ?? '',
       history: window.__nativeSmokeDragActions ?? [],
-    }))()`),
-    (snapshot) => snapshot.currentAction === "clicked" &&
-      snapshot.fallbackAction === "clicked" &&
-      snapshot.animationName === "clicked-pop",
-    2_000,
-    "bounded clicked interaction activation",
-  );
+        }))()`);
+        return lastClickedSnapshot;
+      },
+      (snapshot) => snapshot.currentAction === "clicked" &&
+        snapshot.fallbackAction === "clicked" &&
+        snapshot.animationName === "clicked-pop" &&
+        snapshot.heartAnimationNames.length === 3 &&
+        snapshot.heartAnimationNames.every((name) => name === "click-heart-float"),
+      2_000,
+      "bounded clicked interaction activation",
+    );
+  } catch (error) {
+    throw new Error(`${error.message}; last snapshot=${JSON.stringify(lastClickedSnapshot)}`);
+  }
   const clickedRestored = await waitForCdp(
     () => cdp.evaluate(`(() => ({
       currentAction: document.querySelector('#app')?.getAttribute('data-action') ?? null,
@@ -1323,6 +1362,110 @@ async function verifyWindowsDesktopIntegration(child) {
     "bounded clicked interaction restoration",
   );
   const clickInteraction = { active: clickedActive, restored: clickedRestored };
+
+  const boundaryBefore = queryTrackedWindow(child);
+  const boundaryScreenBefore = await cdp.evaluate(`(() => ({
+    availLeft: window.screen.availLeft,
+    availTop: window.screen.availTop,
+    devicePixelRatio: window.devicePixelRatio,
+  }))()`);
+  const boundaryDragStart = {
+    x: Math.round(
+      boundaryBefore.clientOrigin.x +
+        (css.dragHandle.left + css.dragHandle.width / 2) * css.devicePixelRatio,
+    ),
+    y: Math.round(
+      boundaryBefore.clientOrigin.y +
+        (css.dragHandle.top + css.dragHandle.height / 2) * css.devicePixelRatio,
+    ),
+  };
+  const boundaryConstrained = runTrackedWindowAction(child, "drag", {
+    drag: {
+      startX: boundaryDragStart.x,
+      startY: boundaryDragStart.y,
+      endX: Math.round(boundaryScreenBefore.availLeft * boundaryScreenBefore.devicePixelRatio),
+      endY: Math.round(boundaryScreenBefore.availTop * boundaryScreenBefore.devicePixelRatio),
+    },
+  });
+  const boundaryScreenAfter = await cdp.evaluate(`(() => ({
+    left: Math.round(window.screen.availLeft * window.devicePixelRatio),
+    top: Math.round(window.screen.availTop * window.devicePixelRatio),
+    right: Math.round((window.screen.availLeft + window.screen.availWidth) * window.devicePixelRatio),
+    bottom: Math.round((window.screen.availTop + window.screen.availHeight) * window.devicePixelRatio),
+    maximumEdgeOverflow: Math.round(36 * window.devicePixelRatio),
+  }))()`);
+  const boundaryVisibleWidth = Math.max(
+    0,
+    Math.min(boundaryConstrained.bounds.right, boundaryScreenAfter.right) -
+      Math.max(boundaryConstrained.bounds.left, boundaryScreenAfter.left),
+  );
+  const boundaryVisibleHeight = Math.max(
+    0,
+    Math.min(boundaryConstrained.bounds.bottom, boundaryScreenAfter.bottom) -
+      Math.max(boundaryConstrained.bounds.top, boundaryScreenAfter.top),
+  );
+  assert(
+    boundaryVisibleWidth >=
+        boundaryConstrained.bounds.width - boundaryScreenAfter.maximumEdgeOverflow &&
+      boundaryVisibleHeight >=
+        boundaryConstrained.bounds.height - boundaryScreenAfter.maximumEdgeOverflow,
+    `dragged window exceeded the transparent-padding edge allowance: ${JSON.stringify({
+      bounds: boundaryConstrained.bounds,
+      workArea: boundaryScreenAfter,
+      visibleWidth: boundaryVisibleWidth,
+      visibleHeight: boundaryVisibleHeight,
+    })}`,
+  );
+  const dragBoundary = {
+    requestedEnd: {
+      x: Math.round(boundaryScreenBefore.availLeft * boundaryScreenBefore.devicePixelRatio),
+      y: Math.round(boundaryScreenBefore.availTop * boundaryScreenBefore.devicePixelRatio),
+    },
+    before: boundaryBefore.bounds,
+    after: boundaryConstrained.bounds,
+    workArea: boundaryScreenAfter,
+    visibleWidth: boundaryVisibleWidth,
+    visibleHeight: boundaryVisibleHeight,
+  };
+  const boundaryRestoreHandle = await cdp.evaluate(`(() => {
+    const rect = document.querySelector('#pet-drag-handle').getBoundingClientRect();
+    return {
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+      height: rect.height,
+      devicePixelRatio: window.devicePixelRatio,
+    };
+  })()`);
+  const boundaryRestoreStart = {
+    x: Math.round(
+      boundaryConstrained.clientOrigin.x +
+        (boundaryRestoreHandle.left + boundaryRestoreHandle.width / 2) *
+          boundaryRestoreHandle.devicePixelRatio,
+    ),
+    y: Math.round(
+      boundaryConstrained.clientOrigin.y +
+        (boundaryRestoreHandle.top + boundaryRestoreHandle.height / 2) *
+          boundaryRestoreHandle.devicePixelRatio,
+    ),
+  };
+  const boundaryRestored = runTrackedWindowAction(child, "drag", {
+    drag: {
+      startX: boundaryRestoreStart.x,
+      startY: boundaryRestoreStart.y,
+      endX: boundaryRestoreStart.x + Math.round(96 * boundaryRestoreHandle.devicePixelRatio),
+      endY: boundaryRestoreStart.y + Math.round(96 * boundaryRestoreHandle.devicePixelRatio),
+    },
+  });
+  assert(
+    boundaryRestored.bounds.left >= boundaryScreenAfter.left &&
+      boundaryRestored.bounds.top >= boundaryScreenAfter.top,
+    `could not restore the boundary probe window before compositor sampling: ${JSON.stringify(
+      boundaryRestored.bounds,
+    )}`,
+  );
+  dragBoundary.restored = boundaryRestored.bounds;
+  dragged = boundaryRestored;
   await cdp.evaluate("window.__nativeSmokeDragObserver?.disconnect(); true");
 
   const points = desktopProbeScreenPoints(dragged, css);
@@ -1356,6 +1499,7 @@ async function verifyWindowsDesktopIntegration(child) {
       after: dragged.bounds,
       interaction: dragInteraction,
       restorationBeforePointerLeave,
+      boundary: dragBoundary,
     },
     click: clickInteraction,
     topmostEnabled: second.topmostEnabled,
@@ -1951,6 +2095,44 @@ async function verifyWindowsTrayIntegration(child, mockProcess) {
   );
   report.actions.settings.fixedCloseButton = { before: closeBeforeScroll, after: closeAfterScroll };
 
+  const englishLanguage = await cdp.evaluate(`(() => {
+    const input = document.querySelector('#language-input');
+    input.value = 'en';
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    return {
+      language: document.documentElement.lang,
+      settingsTitle: document.querySelector('#settings-panel h1')?.textContent,
+      stateLabel: document.querySelector('#state-label')?.textContent,
+      guideLabel: document.querySelector('#onboarding-button')?.textContent,
+    };
+  })()`);
+  assert(
+    englishLanguage.language === "en" &&
+      englishLanguage.settingsTitle === "Settings" &&
+      englishLanguage.stateLabel?.includes("Idle") &&
+      englishLanguage.guideLabel === "Connection guide",
+    `English language switch did not update the live interface: ${JSON.stringify(englishLanguage)}`,
+  );
+  const chineseLanguage = await cdp.evaluate(`(() => {
+    const input = document.querySelector('#language-input');
+    input.value = 'zh-CN';
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    return {
+      language: document.documentElement.lang,
+      settingsTitle: document.querySelector('#settings-panel h1')?.textContent,
+      stateLabel: document.querySelector('#state-label')?.textContent,
+      guideLabel: document.querySelector('#onboarding-button')?.textContent,
+    };
+  })()`);
+  assert(
+    chineseLanguage.language === "zh-CN" &&
+      chineseLanguage.settingsTitle === "设置" &&
+      chineseLanguage.stateLabel?.includes("空闲") &&
+      chineseLanguage.guideLabel === "接入向导",
+    `Chinese language switch did not restore the live interface: ${JSON.stringify(chineseLanguage)}`,
+  );
+  report.actions.settings.language = { english: englishLanguage, chinese: chineseLanguage };
+
   await cdp.evaluate(`(() => {
     const input = document.querySelector('#launch-at-startup-input');
     input.checked = true;
@@ -2283,7 +2465,7 @@ function runTrackedWindowAction(child, action, options = {}) {
   assertChildRunning(child, `cannot ${action} a stopped application`);
   assert(Number.isSafeInteger(child.pid) && child.pid > 0, `invalid tracked PID: ${child.pid}`);
   assert(
-    ["query", "close", "topmost", "pixels", "drag", "move"].includes(action),
+    ["query", "close", "topmost", "pixels", "drag", "click", "move"].includes(action),
     `unsupported tracked window action: ${action}`,
   );
   if (options.otherHandle !== undefined) {
@@ -2300,7 +2482,7 @@ function runTrackedWindowAction(child, action, options = {}) {
       assert(Number.isSafeInteger(options.drag?.[key]), `drag action requires integer ${key}`);
     }
   }
-  if (action === "move") {
+  if (action === "move" || action === "click") {
     assert(Number.isSafeInteger(options.point?.x), "move action requires integer x");
     assert(Number.isSafeInteger(options.point?.y), "move action requires integer y");
   }
@@ -2333,8 +2515,8 @@ function runTrackedWindowAction(child, action, options = {}) {
         NATIVE_SMOKE_DRAG_START_Y: action === "drag" ? String(options.drag.startY) : "0",
         NATIVE_SMOKE_DRAG_END_X: action === "drag" ? String(options.drag.endX) : "0",
         NATIVE_SMOKE_DRAG_END_Y: action === "drag" ? String(options.drag.endY) : "0",
-        NATIVE_SMOKE_MOVE_X: action === "move" ? String(options.point.x) : "0",
-        NATIVE_SMOKE_MOVE_Y: action === "move" ? String(options.point.y) : "0",
+        NATIVE_SMOKE_MOVE_X: action === "move" || action === "click" ? String(options.point.x) : "0",
+        NATIVE_SMOKE_MOVE_Y: action === "move" || action === "click" ? String(options.point.y) : "0",
       },
     },
   );
@@ -3138,9 +3320,10 @@ function assertPersistedApplicationSettings() {
   assert(settings.alwaysOnTop === false, "Persisted alwaysOnTop was not false");
   assert(settings.launchAtStartup === false, "Persisted launchAtStartup was not false");
   assert(settings.onboardingVersion === 2, "Persisted onboardingVersion was not 2");
+  assert(settings.language === "zh-CN", `Persisted language was ${settings.language}`);
   assert(
-    Object.keys(settings).length === 9,
-    `Persisted settings schema has ${Object.keys(settings).length} keys, expected 9`,
+    Object.keys(settings).length === 10,
+    `Persisted settings schema has ${Object.keys(settings).length} keys, expected 10`,
   );
   for (const retiredKey of [
     "reduceMotion",

@@ -1,6 +1,6 @@
 [package]
 name = "furry-agent-pet"
-version = "0.2.0"
+version = "0.2.1"
 description = "A lightweight Windows desktop pet that visualizes MCP agent state."
 authors = ["MasaoMinn"]
 edition = "2021"
@@ -34,6 +34,7 @@ tokio = { version = "1", features = ["io-util", "net", "sync", "time"] }
 tauri-plugin-autostart = "2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-window-state = "2"
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging"] }
 
 [dev-dependencies]
 tempfile = "3"

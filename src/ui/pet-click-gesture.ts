@@ -1,12 +1,27 @@
 export function isPetClickGesture(
-  clickDetail: number,
-  pointerDownAtMs: number | null,
-  clickAtMs: number,
+  pointerDownAtMs: number,
+  pointerUpAtMs: number,
+  movementX: number,
+  movementY: number,
   maximumDurationMs: number,
+  maximumMovementPx: number,
 ): boolean {
-  if (clickDetail === 0 || pointerDownAtMs === null) {
-    return true;
-  }
-  const durationMs = clickAtMs - pointerDownAtMs;
-  return durationMs >= 0 && durationMs <= maximumDurationMs;
+  const durationMs = pointerUpAtMs - pointerDownAtMs;
+  return (
+    durationMs >= 0 &&
+    durationMs <= maximumDurationMs &&
+    Math.hypot(movementX, movementY) <= maximumMovementPx
+  );
+}
+
+export function isPetNativeClickGesture(
+  releasedWithinTimeout: boolean,
+  movementX: number,
+  movementY: number,
+  maximumMovementPx: number,
+): boolean {
+  return (
+    releasedWithinTimeout &&
+    Math.hypot(movementX, movementY) <= maximumMovementPx
+  );
 }

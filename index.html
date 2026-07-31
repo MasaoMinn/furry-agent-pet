@@ -6,6 +6,7 @@
     <meta
       name="description"
       content="用桌宠动作和文字气泡呈现 MCP Agent 的实时状态"
+      data-i18n-content="appDescription"
     />
     <link rel="stylesheet" href="/src/styles.css" />
     <title>furry-agent-pet</title>
@@ -26,9 +27,9 @@
         <div class="bubble-heading">
           <div class="bubble-context">
             <strong id="bubble-session-title" class="bubble-session-title" hidden></strong>
-            <span id="bubble-eyebrow">Agent 状态</span>
+            <span id="bubble-eyebrow" data-i18n="agentStatus">Agent 状态</span>
           </div>
-          <button id="bubble-close" class="bubble-close" type="button" aria-label="关闭消息">
+          <button id="bubble-close" class="bubble-close" type="button" aria-label="关闭消息" data-i18n-aria-label="closeMessage">
             ×
           </button>
         </div>
@@ -36,23 +37,30 @@
         <p id="bubble-file" class="bubble-file" hidden></p>
       </section>
 
-      <section class="pet-zone" aria-label="Agent 桌宠">
+      <section class="pet-zone" aria-label="Agent 桌宠" data-i18n-aria-label="petArea">
         <span class="celebration" aria-hidden="true"></span>
+        <span class="click-hearts" aria-hidden="true">
+          <span class="click-heart">♥</span>
+          <span class="click-heart">♥</span>
+          <span class="click-heart">♥</span>
+        </span>
         <button
           id="pet-drag-handle"
           class="pet-drag-handle"
           type="button"
           aria-label="拖动桌宠"
+          data-i18n-aria-label="dragPet"
         >
           <img
             id="pet-image"
             class="pet-image"
             src="/pets/fallback-idle.svg"
             alt="桌宠备用静态图标"
+            data-i18n-alt="fallbackPet"
             draggable="false"
           />
         </button>
-        <span id="connection-badge" class="connection-badge">等待 MCP</span>
+        <span id="connection-badge" class="connection-badge" data-i18n="waitingMcp">等待 MCP</span>
       </section>
 
       <p class="state-chip" role="status">
@@ -65,6 +73,7 @@
           class="round-button settings-toggle"
           type="button"
           aria-label="打开设置"
+          data-i18n-aria-label="openSettings"
           aria-expanded="false"
         >
           <span aria-hidden="true">⚙</span>
@@ -72,48 +81,57 @@
       </p>
       </div>
 
-      <section id="settings-panel" class="settings-panel" aria-label="桌宠设置" hidden>
+      <section id="settings-panel" class="settings-panel" aria-label="桌宠设置" data-i18n-aria-label="petSettings" hidden>
         <header
           id="settings-drag-handle"
           class="settings-header settings-drag-handle side-panel-header"
           title="拖动设置窗口"
+          data-i18n-title="dragSettings"
         >
           <div>
             <p class="settings-kicker">furry-agent-pet</p>
-            <h1>设置</h1>
+            <h1 data-i18n="settings">设置</h1>
           </div>
-          <button id="settings-close" class="round-button side-panel-close" type="button" aria-label="关闭设置">×</button>
+          <button id="settings-close" class="round-button side-panel-close" type="button" aria-label="关闭设置" data-i18n-aria-label="closeSettings">×</button>
         </header>
 
         <form id="settings-form" class="settings-form">
+          <label class="text-setting">
+            <span data-i18n="language">界面语言</span>
+            <select id="language-input">
+              <option value="zh-CN" data-i18n="chinese">中文</option>
+              <option value="en" data-i18n="english">English</option>
+            </select>
+          </label>
+
           <label class="range-setting">
-            <span>桌宠缩放 <output id="scale-output">100%</output></span>
+            <span><span data-i18n="petScale">桌宠缩放</span> <output id="scale-output">100%</output></span>
             <input id="scale-input" type="range" min="50" max="200" step="5" />
           </label>
 
           <label class="range-setting">
-            <span>透明度 <output id="opacity-output">100%</output></span>
+            <span><span data-i18n="opacity">透明度</span> <output id="opacity-output">100%</output></span>
             <input id="opacity-input" type="range" min="30" max="100" step="5" />
           </label>
 
           <label class="text-setting">
-            <span>宠物资源包</span>
+            <span data-i18n="petPackage">宠物资源包</span>
             <select id="pet-package-input" aria-describedby="pet-package-description"></select>
           </label>
-          <p id="pet-package-description" class="setting-description">
+          <p id="pet-package-description" class="setting-description" data-i18n="petPackageDescription">
             内置包登记 manifest 即可；本地包会先验证并复制到应用数据目录。
           </p>
           <div class="pet-package-actions">
-            <button id="import-pet-package-button" type="button">导入 pet.json</button>
-            <button id="remove-pet-package-button" type="button">删除当前本地包</button>
+            <button id="import-pet-package-button" type="button" data-i18n="importPet">导入 pet.json</button>
+            <button id="remove-pet-package-button" type="button" data-i18n="removePet">删除当前本地包</button>
           </div>
           <p id="pet-package-status" class="setting-description" role="status" hidden></p>
           <p id="pet-package-error" class="connection-error-label" role="status" hidden></p>
 
           <section class="state-animation-settings" aria-labelledby="state-animation-title">
             <div id="state-animation-overview">
-              <h2 id="state-animation-title">状态动作</h2>
-              <p>每个状态占一行。点击状态后，在下方展开并选择其他动作。</p>
+              <h2 id="state-animation-title" data-i18n="stateActions">状态动作</h2>
+              <p data-i18n="stateActionsDescription">每个状态占一行。点击状态后，在下方展开并选择其他动作。</p>
               <div id="state-animation-grid" class="state-animation-grid"></div>
             </div>
 
@@ -123,24 +141,25 @@
                 class="action-live-preview"
                 src="/pets/fallback-idle.svg"
                 alt="动作预览"
+                data-i18n-alt="actionPreview"
                 draggable="false"
               />
             </div>
           </section>
 
           <div class="toggle-grid">
-            <label><input id="always-on-top-input" type="checkbox" /> 总在最前</label>
-            <label><input id="launch-at-startup-input" type="checkbox" /> 开机自启</label>
-            <label><input id="bubble-input" type="checkbox" /> 显示气泡</label>
+            <label><input id="always-on-top-input" type="checkbox" /> <span data-i18n="alwaysOnTop">总在最前</span></label>
+            <label><input id="launch-at-startup-input" type="checkbox" /> <span data-i18n="launchAtStartup">开机自启</span></label>
+            <label><input id="bubble-input" type="checkbox" /> <span data-i18n="showBubble">显示气泡</span></label>
           </div>
           <p id="connection-error-label" class="connection-error-label" role="status" hidden></p>
 
           <div class="settings-actions">
-            <button id="reconnect-button" type="button">重新连接</button>
-            <button id="reset-button" type="button">恢复默认</button>
-            <button id="onboarding-button" type="button">接入向导</button>
-            <button id="project-intro-button" type="button">项目介绍</button>
-            <button id="quit-button" class="danger-button" type="button">退出应用</button>
+            <button id="reconnect-button" type="button" data-i18n="reconnect">重新连接</button>
+            <button id="reset-button" type="button" data-i18n="reset">恢复默认</button>
+            <button id="onboarding-button" type="button" data-i18n="onboarding">接入向导</button>
+            <button id="project-intro-button" type="button" data-i18n="projectIntro">项目介绍</button>
+            <button id="quit-button" class="danger-button" type="button" data-i18n="quit">退出应用</button>
           </div>
           <p id="settings-action-error" class="connection-error-label" role="status" hidden></p>
         </form>
@@ -157,13 +176,14 @@
         <header class="settings-header side-panel-header">
           <div>
             <p class="settings-kicker">furry-agent-pet</p>
-            <h1 id="onboarding-title">连接你的 Agent</h1>
+            <h1 id="onboarding-title" data-i18n="connectAgent">连接你的 Agent</h1>
           </div>
           <button
             id="onboarding-close"
             class="round-button side-panel-close"
             type="button"
             aria-label="稍后设置"
+            data-i18n-aria-label="later"
           >
             ×
           </button>
@@ -171,12 +191,12 @@
 
         <div class="onboarding-content">
           <article id="agent-connection-prompt" class="setup-card agent-prompt-card">
-            <h2>方法 1：发送指令给代理</h2>
-            <p>将下面这句话发送给 Codex 或其他能够编辑自身 MCP 配置的代理：</p>
-            <button id="copy-agent-prompt" class="copy-prompt-button" type="button">
+            <h2 data-i18n="method1">方法 1：发送指令给代理</h2>
+            <p data-i18n="promptInstruction">将下面这句话发送给 Codex 或其他能够编辑自身 MCP 配置的代理：</p>
+            <button id="copy-agent-prompt" class="copy-prompt-button" type="button" data-i18n="copyInstruction">
               复制指令
             </button>
-            <p class="prompt-lead">请为当前环境安装 Furry Companion MCP：</p>
+            <p class="prompt-lead" data-i18n="installPromptLead">请为当前环境安装 Furry Companion MCP：</p>
 
             <h3>Codex:</h3>
             <div class="code-copy-block">
@@ -190,7 +210,7 @@
             </div>
 
             <h3>Cursor / Claude Desktop:</h3>
-            <p>在 MCP 配置中加入：</p>
+            <p data-i18n="addMcpConfig">在 MCP 配置中加入：</p>
             <div class="code-copy-block">
               <pre id="agent-mcp-config" tabindex="0"></pre>
               <button
@@ -201,11 +221,11 @@
               >复制</button>
             </div>
 
-            <p>安装后请重启 Agent 会话，并验证 MCP tools 中是否出现 <code>set_state</code>。</p>
-            <h3>如果失败：</h3>
+            <p data-i18n="restartAndVerify">安装后请重启 Agent 会话，并验证 MCP tools 中是否出现 set_state。</p>
+            <h3 data-i18n="ifFailed">如果失败：</h3>
             <ol class="troubleshooting-list">
               <li>
-                <span>先确认 Node.js 和 npm 可用：</span>
+                <span data-i18n="checkNode">先确认 Node.js 和 npm 可用：</span>
                 <div class="code-copy-block compact-code-block">
                   <pre id="node-npm-check-command" tabindex="0"></pre>
                   <button
@@ -217,7 +237,7 @@
                 </div>
               </li>
               <li>
-                <span>测试包能运行：</span>
+                <span data-i18n="testPackage">测试包能运行：</span>
                 <div class="code-copy-block compact-code-block">
                   <pre id="mcp-run-command" tabindex="0"></pre>
                   <button
@@ -229,7 +249,7 @@
                 </div>
               </li>
               <li>
-                <span>若提示权限或网络错误，清理 npm 缓存后重试：</span>
+                <span data-i18n="verifyCache">若提示权限或网络错误，清理 npm 缓存后重试：</span>
                 <div class="code-copy-block compact-code-block">
                   <pre id="npm-cache-command" tabindex="0"></pre>
                   <button
@@ -240,16 +260,16 @@
                   >复制</button>
                 </div>
               </li>
-              <li>若 MCP 已存在，先移除旧配置再重新添加。</li>
+              <li data-i18n="replaceOldConfig">若 MCP 已存在，先移除旧配置再重新添加。</li>
             </ol>
-            <p id="copy-agent-prompt-status" class="copy-status" role="status">
+            <p id="copy-agent-prompt-status" class="copy-status" role="status" data-i18n="copyHelp">
               可复制完整指令，也可以单独复制每段命令或配置。
             </p>
           </article>
 
           <article class="setup-card manual-setup-card">
-            <h2>方法 2：手动配置 MCP</h2>
-            <p>将 MCP 服务器条目添加到客户端配置中。</p>
+            <h2 data-i18n="method2">方法 2：手动配置 MCP</h2>
+            <p data-i18n="addServerEntry">将 MCP 服务器条目添加到客户端配置中。</p>
             <div class="code-copy-block">
               <pre id="manual-mcp-config" tabindex="0"></pre>
               <button
@@ -259,18 +279,18 @@
                 data-copy-label="手动 MCP 配置"
               >复制</button>
             </div>
-            <p>
+            <p data-i18n="restartAfterConfig">
               更改 MCP 配置后，请重启代理。当前代理会话通常无法热加载新添加的 MCP 工具。
             </p>
           </article>
 
           <div id="onboarding-status" class="onboarding-status" data-connection="connecting">
-            <strong id="onboarding-connection-label">正在检测连接</strong>
+            <strong id="onboarding-connection-label" data-i18n="detectingConnection">正在检测连接</strong>
           </div>
 
           <div class="onboarding-actions">
-            <button id="onboarding-reconnect" type="button">重新检测</button>
-            <button id="onboarding-done" class="primary-button" type="button">完成并关闭</button>
+            <button id="onboarding-reconnect" type="button" data-i18n="detectAgain">重新检测</button>
+            <button id="onboarding-done" class="primary-button" type="button" data-i18n="doneClose">完成并关闭</button>
           </div>
         </div>
       </section>

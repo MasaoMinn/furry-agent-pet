@@ -54,6 +54,14 @@ describe("BubbleController", () => {
     expect(bubble.hidden).toBe(false);
   });
 
+  it("updates application-owned bubble copy when the language changes", () => {
+    controller.show({ type: "state", state: "error" }, DEFAULT_SETTINGS);
+    controller.setLanguage("en");
+
+    expect(message.textContent).toContain("Agent encountered a problem");
+    expect(closeButton.getAttribute("aria-label")).toContain("Acknowledge error");
+  });
+
   it("renders hostile markup as plain text", () => {
     const hostile = '<img src=x onerror="globalThis.pwned=true">';
     controller.show(
@@ -97,6 +105,21 @@ describe("BubbleController", () => {
     vi.advanceTimersByTime(30_000);
     expect(bubble.hidden).toBe(false);
     bubble.dispatchEvent(new Event("pointerleave"));
+    vi.advanceTimersByTime(9_999);
+    expect(bubble.hidden).toBe(false);
+    vi.advanceTimersByTime(1);
+    expect(bubble.hidden).toBe(true);
+  });
+
+  it("resumes an engaged bubble when native hit testing reports pointer leave", () => {
+    controller.show(
+      { type: "state", state: "success", message: "finished" },
+      DEFAULT_SETTINGS,
+    );
+    vi.advanceTimersByTime(5_000);
+    bubble.dispatchEvent(new Event("pointerenter"));
+    controller.handleNativePointerLeave();
+
     vi.advanceTimersByTime(9_999);
     expect(bubble.hidden).toBe(false);
     vi.advanceTimersByTime(1);

@@ -19,6 +19,12 @@ describe("normalizeSettings", () => {
     });
   });
 
+  it("persists only the supported interface languages", () => {
+    expect(normalizeSettings({ language: "en" }).language).toBe("en");
+    expect(normalizeSettings({ language: "zh-CN" }).language).toBe("zh-CN");
+    expect(normalizeSettings({ language: "fr" }).language).toBe("zh-CN");
+  });
+
   it("drops retired manual motion and IPC preferences", () => {
     const normalized = normalizeSettings({
       reduceMotion: true,

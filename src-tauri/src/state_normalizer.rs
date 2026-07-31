@@ -26,8 +26,9 @@ impl StateEventNormalizer {
         };
 
         let state_changed = event.state != last_emitted.state;
+        let session_changed = event.session_title != last_emitted.session_title;
         let terminal = matches!(event.state, AgentState::Success | AgentState::Error);
-        if state_changed || terminal {
+        if state_changed || session_changed || terminal {
             self.clear_pending();
             if self.last_emitted.as_ref() == Some(&event) {
                 return None;
@@ -174,6 +175,31 @@ mod tests {
     }
 
     #[test]
+    fn session_title_changes_are_immediate_even_for_the_same_state() {
+        let start = Instant::now();
+        let mut normalizer = StateEventNormalizer::default();
+        let session_a = event_with_session(
+            AgentState::Coding,
+            Some("会话 A"),
+            Some("working"),
+            Some("src/a.ts"),
+        );
+        assert_eq!(normalizer.push(session_a.clone(), start), Some(session_a));
+
+        let session_b = event_with_session(
+            AgentState::Coding,
+            Some("会话 B"),
+            Some("working"),
+            Some("src/b.ts"),
+        );
+        assert_eq!(
+            normalizer.push(session_b.clone(), start + Duration::from_millis(1)),
+            Some(session_b)
+        );
+        assert!(!normalizer.has_pending());
+    }
+
+    #[test]
     fn the_latest_whole_event_can_clear_message_and_file() {
         let start = Instant::now();
         let mut normalizer = StateEventNormalizer::default();
@@ -193,10 +219,19 @@ mod tests {
     }
 
     fn event(state: AgentState, message: Option<&str>, file: Option<&str>) -> StateEvent {
+        event_with_session(state, None, message, file)
+    }
+
+    fn event_with_session(
+        state: AgentState,
+        session_title: Option<&str>,
+        message: Option<&str>,
+        file: Option<&str>,
+    ) -> StateEvent {
         StateEvent {
             event_type: "state",
             state,
-            session_title: None,
+            session_title: session_title.map(str::to_owned),
             message: message.map(str::to_owned),
             file: file.map(str::to_owned),
         }

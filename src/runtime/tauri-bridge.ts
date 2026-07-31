@@ -9,6 +9,7 @@ import {
 } from "@tauri-apps/api/window";
 
 import type { AgentStateEvent } from "../domain/agent-state";
+import type { PointerCaptureRegion } from "../ui/pointer-capture-regions";
 import {
   resolveSidePanelLayout,
   type SidePanelPlacement,
@@ -35,6 +36,14 @@ export interface RuntimeHandlers {
   onConnection: (snapshot: RuntimeSnapshot) => void;
   onOpenSettings?: () => void;
   onAlwaysOnTopChanged?: (alwaysOnTop: boolean) => void;
+  onPointerCaptureLeave?: () => void;
+}
+
+export interface WindowDragResult {
+  native: boolean;
+  releasedWithinTimeout: boolean;
+  deltaX: number;
+  deltaY: number;
 }
 
 export async function subscribeToRuntime(handlers: RuntimeHandlers): Promise<() => void> {
@@ -58,6 +67,9 @@ export async function subscribeToRuntime(handlers: RuntimeHandlers): Promise<() 
     await listen<boolean>("always-on-top-changed", ({ payload }) =>
       handlers.onAlwaysOnTopChanged?.(payload),
     ),
+  );
+  unlisteners.push(
+    await listen("pointer-capture-left", () => handlers.onPointerCaptureLeave?.()),
   );
 
   handlers.onConnection(await invoke<RuntimeSnapshot>("get_runtime_snapshot"));
@@ -84,6 +96,14 @@ export async function reconnectIpc(): Promise<void> {
 export async function setAlwaysOnTop(alwaysOnTop: boolean): Promise<void> {
   if (isTauri()) {
     await invoke("set_always_on_top", { alwaysOnTop });
+  }
+}
+
+export async function setPointerCaptureRegions(
+  regions: readonly PointerCaptureRegion[],
+): Promise<void> {
+  if (isTauri()) {
+    await invoke("set_pointer_capture_regions", { regions });
   }
 }
 
@@ -141,10 +161,19 @@ export async function resizeWindowForScale(
   return layout.placement;
 }
 
-export async function startWindowDrag(): Promise<void> {
-  if (isTauri()) {
-    await getCurrentWindow().startDragging();
+export async function startWindowDrag(
+  releaseTimeoutMs = 300,
+): Promise<WindowDragResult> {
+  if (!isTauri()) {
+    return { native: false, releasedWithinTimeout: false, deltaX: 0, deltaY: 0 };
   }
+  const result = await invoke<Omit<WindowDragResult, "native">>("start_tracked_window_drag", {
+    timeoutMs: releaseTimeoutMs,
+  });
+  return {
+    native: true,
+    ...result,
+  };
 }
 
 export async function quitApplication(): Promise<void> {

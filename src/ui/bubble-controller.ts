@@ -1,9 +1,9 @@
-import { STATE_PRESENTATION, type AgentStateEvent } from "../domain/agent-state";
+import type { AgentStateEvent } from "../domain/agent-state";
+import { stateLabel, translate, type AppLanguage } from "../domain/i18n";
 import type { AppSettings } from "../domain/settings";
 
 const NORMAL_MESSAGE_DURATION_MS = 5_000;
 export const SUCCESS_MESSAGE_DURATION_MS = 15_000;
-const DEFAULT_ERROR_MESSAGE = "Agent 遇到问题，等待下一状态或确认。";
 
 export class PausableTimer {
   private handle: number | null = null;
@@ -58,6 +58,7 @@ export class BubbleController {
   private selecting = false;
   private displayedEvent: AgentStateEvent | null = null;
   private dismissedSuccessEvent: AgentStateEvent | null = null;
+  private language: AppLanguage = "zh-CN";
 
   constructor(
     private readonly bubble: HTMLElement,
@@ -102,6 +103,28 @@ export class BubbleController {
     this.closeButton.removeEventListener("click", this.handleManualClose);
   }
 
+  setLanguage(language: AppLanguage): void {
+    this.language = language;
+    const event = this.displayedEvent;
+    if (!event) {
+      return;
+    }
+    this.eyebrow.textContent = stateLabel(language, event.state);
+    if (!event.message) {
+      this.message.textContent = event.state === "success"
+        ? translate(language, "taskComplete")
+        : event.state === "error"
+          ? translate(language, "agentError")
+          : "";
+    }
+    this.updateCloseLabel(event.state === "error");
+  }
+
+  handleNativePointerLeave(): void {
+    this.hovered = false;
+    this.resumeIfUnengaged();
+  }
+
   private showEvent(event: AgentStateEvent, settings: AppSettings, detailsOnly: boolean): void {
     if (detailsOnly && event.state === "success" && this.dismissedSuccessEvent === event) {
       return;
@@ -117,7 +140,11 @@ export class BubbleController {
 
     const isSuccess = event.state === "success";
     const isError = event.state === "error";
-    const text = event.message || (isSuccess ? "任务已完成" : isError ? DEFAULT_ERROR_MESSAGE : "");
+    const text = event.message || (isSuccess
+      ? translate(this.language, "taskComplete")
+      : isError
+        ? translate(this.language, "agentError")
+        : "");
     const visibleFile = settings.showFilePath && event.file ? event.file : "";
     if (text === "" && visibleFile === "") {
       this.hide();
@@ -128,7 +155,7 @@ export class BubbleController {
     this.sessionTitle.textContent = event.sessionTitle ?? "";
     this.sessionTitle.hidden = !event.sessionTitle;
     this.sessionTitle.title = event.sessionTitle ?? "";
-    this.eyebrow.textContent = STATE_PRESENTATION[event.state].label;
+    this.eyebrow.textContent = stateLabel(this.language, event.state);
     this.message.textContent = text;
     this.message.hidden = text === "";
     this.file.textContent = visibleFile;
@@ -137,11 +164,7 @@ export class BubbleController {
     this.bubble.dataset.missingCompletionMessage = String(isSuccess && !event.message);
     this.bubble.setAttribute("role", isError ? "alert" : "status");
     this.bubble.setAttribute("aria-live", isError ? "assertive" : "polite");
-    this.closeButton.setAttribute(
-      "aria-label",
-      isError ? "确认错误并返回空闲状态" : "关闭消息",
-    );
-    this.closeButton.title = isError ? "确认错误并返回空闲状态" : "关闭消息";
+    this.updateCloseLabel(isError);
     this.bubble.hidden = false;
 
     this.timer.cancel();
@@ -172,6 +195,12 @@ export class BubbleController {
     if (!this.bubble.hidden && this.file.hidden && this.message.hidden) {
       this.hide();
     }
+  }
+
+  private updateCloseLabel(isError: boolean): void {
+    const label = translate(this.language, isError ? "acknowledgeError" : "closeMessage");
+    this.closeButton.setAttribute("aria-label", label);
+    this.closeButton.title = label;
   }
 
   private resumeIfUnengaged(): void {
